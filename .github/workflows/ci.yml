@@ -147,13 +147,17 @@ jobs:
           # on a run that is already red.
           task=$(grep -hoE "Execution failed for task '[^']+'" /tmp/tests.log 2>/dev/null |
             head -1 | sed "s/Execution failed for task '//; s/'//")
+          # A workflow-command value may not contain ':' — it terminates the `key=value` list, so the
+          # task name is only used for the "which task" annotation and never inside a title.
           if [ -n "${task:-}" ]; then
-            # A workflow-command value may not contain ':' — it terminates the `key=value` list.
-            title="compiler-detail-${task//:/_}"
-            gradle --no-daemon "$task" --info 2>&1 |
-              grep -E "e: |error:" | head -25 | cut -c1-500 |
-              while IFS= read -r line; do echo "::error file=build,title=${title}::${line}"; done
+            echo "::error file=build,title=failing-task::${task}"
           fi
+          # Kotlin writes the compiler's own diagnostics to a daemon log rather than to Gradle's
+          # stdout, and a re-run would report UP-TO-DATE and print nothing. Read the log directly.
+          for f in $(find /home/runner/.gradle/daemon /home/runner/work -name 'kotlin-daemon-err*' 2>/dev/null | head -3); do
+            grep -hE "^e: |^w: .*unsafe" "$f" 2>/dev/null | head -25 | cut -c1-500 |
+              while IFS= read -r line; do echo "::error file=build,title=kotlin-daemon-log::${line}"; done
+          done
           echo "Tests failed; see the annotations on this check run."
 
       - name: Android Lint (report only, does not fail the build)
