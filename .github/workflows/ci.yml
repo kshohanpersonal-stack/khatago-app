@@ -97,12 +97,17 @@ jobs:
 
       - name: Unit tests (JVM + Robolectric)
         id: tests
-        run: gradle --no-daemon :app:testDebugUnitTest --stacktrace
+        run: |
+          set -uo pipefail
+          # The raw log is kept (and filtered into the summary below on failure), because the Actions
+          # log host is not reachable from every reviewer's network.
+          gradle --no-daemon :app:testDebugUnitTest --stacktrace 2>&1 | tee /tmp/tests.log
+          exit "${PIPESTATUS[0]}"
 
-      # Log download from this job is only reachable through the Actions results host, so the two
-      # things a reviewer needs when this step is red are repeated here: the compiler errors, and the
-      # assertion messages from the JUnit XML. Both are truncated on purpose — an annotation that scrolls
-      # forever is an annotation nobody reads.
+      # The Actions log host is not reachable from every reviewer's network, so when this step is red the
+      # two things that actually diagnose it — Kotlin compile errors and JUnit assertion messages — are
+      # re-printed into the run summary. Truncated on purpose: a summary that scrolls forever is a summary
+      # nobody reads.
       - name: Surface the failure (only when tests did not pass)
         if: failure() && steps.tests.outcome == 'failure'
         run: |
@@ -110,16 +115,23 @@ jobs:
           {
             echo "### Test failure detail"
             echo
+            echo "#### Kotlin compile errors"
             echo '```'
-            find app/build/tmp -name '*.log' 2>/dev/null | head -5 |
-              xargs -r grep -hE "error:|unresolved reference|expecting" | head -60
-            find app/build/reports -name '*.txt' -path '*lint*' 2>/dev/null | head -2 |
-              xargs -r sed -n '1,40p'
-            find app/build/test-results -name 'TEST-*.xml' 2>/dev/null | head -20 |
-              xargs -r grep -hoE 'testcase name="[^"]+"|<failure message="[^"]{0,220}' | head -80
+            grep -E "^e: " /tmp/tests.log 2>/dev/null | head -60 || true
+            echo '```'
+            echo
+            echo "#### Gradle task + failure lines"
+            echo '```'
+            grep -E "^> Task|FAILURE:|What went wrong|Caused by|tests? completed|tests? failed" /tmp/tests.log 2>/dev/null | head -60 || true
+            echo '```'
+            echo
+            echo "#### Failed assertions"
+            echo '```'
+            find app/build/test-results -name 'TEST-*.xml' 2>/dev/null | head -30 |
+              xargs -r grep -hoE "testcase name=\"[^\"]+\"|message=\"[^\"]{0,180}" 2>/dev/null | head -100 || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "Tests failed; see this run summary for compiler/assertion detail."
+          echo "Tests failed; the detail is in this run summary."
 
       - name: Android Lint (report only, does not fail the build)
         if: always()
