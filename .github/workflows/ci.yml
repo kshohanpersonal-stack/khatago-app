@@ -80,13 +80,17 @@ jobs:
           exit $rc
 
   # --------------------------------------------------------------------------- root-cause probe
-  # `e: Could not load module <Error module>` from a kapt task is not the error; it is kapt declining
-  # to print the errors it found. This job re-runs the same compile with an init script that skips the
-  # kapt tasks so the ordinary Kotlin compiler can name the file, line and symbol, then publishes that
-  # on the ci-diagnostics branch.
+  # `e: Could not load module <Error module>` is not the diagnosis. The Kotlin compiler emits it when
+  # something in the compilation resolves to an *error descriptor* (a reference to a class/member that
+  # does not exist) - see e.g. https://qiita.com/takahirom/items/e276cf344c96c40401b5, which pins it to
+  # `ErrorModuleDescriptor` reaching the symbol table. In kapt's stub-generation mode the compiler
+  # replaces its own diagnostics with exactly this one line, so the file and line number never appear
+  # in the kapt task's output at all.
   #
-  # It is a *diagnostic*, never a build: the main job below still compiles with kapt enabled, still
-  # runs Room's processor, and still produces the APK. Nothing here weakens what CI verifies.
+  # This job therefore does not guess. It re-runs the same compilation four ways and publishes all four
+  # unfiltered logs on the `ci-diagnostics` branch, so the next read names a file:line:col instead of a
+  # symptom. Every probe is diagnostic-only: the `build` job below still compiles with kapt and Room
+  # enabled, still runs the annotation processor, and still assembles the APK.
   diagnose-compile:
     name: Publish root-cause diagnostics
     runs-on: ubuntu-latest
@@ -106,21 +110,48 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
-      - name: Compile with kapt tasks skipped, so the real errors surface
-        id: probe
+      - name: Re-compile four ways until something names a line
         continue-on-error: true
         run: |
           set -uo pipefail
-          cat > /tmp/skip-kapt.init.gradle.kts <<'INITEOF'
-          // Diagnostic-only: disable the kapt tasks so compileDebugKotlin reports the source errors
-          // that kapt's stub task hides behind "Could not load module <Error module>".
+          # (a) the documented recipe: disable the kapt tasks, so the ordinary compile task - same
+          #     sources, same classpath, no stub mode - reports its own diagnostics;
+          # (b) the same, and push on to the test source sets, where an unresolved reference is just as
+          #     fatal and is the one set the static checkers in `checks` cover least;
+          # (c) the failing task with incremental compilation off, to rule the IC state in or out;
+          # (d) the failing task with the configuration cache off, to rule the KGP argument providers in
+          #     or out. Each is ~40 s, and a run that is already red is not a scarce resource.
+          cat > /tmp/no-kapt.init.gradle.kts <<'INITEOF'
           gradle.beforeProject {
               tasks.matching { it.name.startsWith("kapt") }.configureEach { enabled = false }
           }
           INITEOF
-          gradle --no-daemon --console=plain -I /tmp/skip-kapt.init.gradle.kts \
-            :app:compileDebugKotlin --info 2>&1 | tee /tmp/kapt-disabled.log | tail -60 || true
-          echo "Compiler exit path recorded; report published regardless of outcome."
+          cat > /tmp/probes.def <<'PROBES'
+          stubs-baseline|
+          kaptless-compile|-I /tmp/no-kapt.init.gradle.kts
+          kaptless-tests|-I /tmp/no-kapt.init.gradle.kts
+          stubs-no-ic|-Pkotlin.incremental=false -Pkotlin.incremental.useModuleDetection=false
+          stubs-no-cc|--no-configuration-cache
+          PROBES
+          : > /tmp/everything-e.log
+          while IFS='|' read -r label args; do
+            [ -n "$label" ] || continue
+            case "$label" in
+              stubs-baseline)  task=:app:kaptGenerateStubsDebugKotlin ;;
+              kaptless-compile) task=:app:compileDebugKotlin ;;
+              kaptless-tests)   task=:app:compileDebugUnitTestKotlin ;;
+              *)                task=:app:kaptGenerateStubsDebugKotlin ;;
+            esac
+            log=/tmp/probe-$label.log
+            echo "===== $label : gradle $args $task"
+            # shellcheck disable=SC2086
+            gradle --no-daemon --console=plain --stacktrace $args "$task" > "$log" 2>&1
+            rc=$?   # captured, not propagated: this step's product is the log, not a verdict
+            echo "exit=$rc diagnostics=$(grep -cE '^(e: |w: file:)' "$log" || true)"
+            grep -E '^(e: |w: file:)' "$log" | head -60 >> /tmp/everything-e.log || true
+            { echo "===== $label ====="; tail -150 "$log"; } >> /tmp/raw-all.txt
+          done < /tmp/probes.def
+          echo "Probes complete; publishing whatever they found."
 
       - name: Publish diagnostics branch
         if: always()
@@ -135,18 +166,24 @@ jobs:
           {
             echo "# KhataGo compile diagnostics for run $GITHUB_RUN_ID"
             echo
-            echo "Commit: $(git rev-parse --short HEAD) · branch: ${GITHUB_REF_NAME}"
+            echo "Commit: $(git rev-parse --short HEAD)"
             echo
+            echo "## Every compiler diagnostic line, from all five probes"
             echo '```'
-            grep -E "^e: |^w: file:|error:|Caused by:|> Task" /tmp/kapt-disabled.log 2>/dev/null | head -120
+            cat /tmp/everything-e.log 2>/dev/null | head -200
             echo '```'
             echo
-            echo "## First 60 'e:' lines (file:line:col)"
+            echo "## Gradle failure summaries (the \`Caused by\` chain)"
             echo '```'
-            grep -E "^e: " /tmp/kapt-disabled.log 2>/dev/null | head -60
+            grep -hA 12 "What went wrong" /tmp/probe-*.log 2>/dev/null | head -120
             echo '```'
+            echo
+            echo "Probe labels: stubs-baseline, kaptless-compile, kaptless-tests, stubs-no-ic, stubs-no-cc."
+            echo "The last 150 raw lines of each are in raw-all.txt (published beside this file) -"
+            echo "publishing raw output is deliberate: every filtered variant of this report has hidden the"
+            echo "answer at least once."
           } > "$dest/kapt-disabled.md"
-          tail -1200 /tmp/kapt-disabled.log > "$dest/kapt-disabled.txt" 2>/dev/null || true
+          tail -900 /tmp/raw-all.txt > "$dest/kapt-disabled.txt" 2>/dev/null || true
           git -C "$dest" add -A
           git -C "$dest" commit -qm "compile diagnostics for $GITHUB_RUN_ID"
           git -C "$dest" push -q --force \
@@ -184,36 +221,24 @@ jobs:
           exit "${PIPESTATUS[0]}"
 
       # The log/artefact hosts are not reachable from every reviewer's network (they were not from the
-      # sandbox this project was written in), so a red test run repeats itself where the API *can* read
-      # it: as check annotations (list-annotations API) and in the run summary markdown. Capped, because
-      # an unbounded error dump buries the one line that matters.
-      # The log/artefact hosts are not reachable from every reviewer's network (they were not from the
-      # sandbox this project was written in), and a job summary is not readable through the API. So a red
-      # run repeats itself as *annotations*, which the checks API does serve: the ten most diagnostic
-      # lines, plus every unresolved reference. Deliberately no `pipefail` here — a grep that finds
-      # nothing must not be what fails this step.
-      # A kapt failure can print nothing but "Could not load module <Error module>" — the real compiler
-      # diagnostics are then only in the verbose log. This step re-runs the two compile paths with
-      # --info/--console=plain and greps hard, so the next CI run says which line is wrong, not just
-      # which task was. It is quiet and cheap on a green build (it does not run at all then).
-      - name: Probe the compiler for the real error
+      # sandbox this project was written in), and a job summary is not readable through the API at all.
+      # So a red run repeats itself twice: as *annotations*, which the checks API does serve, and as files
+      # pushed to the throwaway `ci-diagnostics` branch, which `git fetch` can always read. Both are capped
+      # deliberately - an unbounded error dump buries the one line that matters, which is exactly what the
+      # first three versions of this step did to us.
+      - name: Publish the gradle failure summary from the log we already have
         if: failure() && steps.tests.outcome == 'failure'
         run: |
           set -uo pipefail
-          # The plain Kotlin compile is the one that reports real diagnostics, so its UNFILTERED log is
-          # what gets published. Filtering is what made three CI rounds useless: the compiler's error
-          # lines do not all start with "e:", and a grep matching nothing looks exactly like a build that
-          # produced no errors.
-          out=/tmp/probe.txt
-          {
-            echo "### :app:kaptGenerateStubsDebugKotlin --info (unfiltered tail)"
-            gradle --no-daemon --console=plain :app:kaptGenerateStubsDebugKotlin --info 2>&1 | tail -300
-            echo "### :app:compileDebugKotlin --info (unfiltered tail)"
-            gradle --no-daemon --console=plain :app:compileDebugKotlin --info 2>&1 | tail -400
-          } > "$out" 2>&1 || true
-          cp "$out" /tmp/diagnostics-probe.txt 2>/dev/null || true
-          cp "$out" /tmp/build-errors.txt 2>/dev/null || true
-          head -40 "$out" 2>/dev/null || true
+          # Re-running the failing task here used to be this step's job, and it was a lie: the task fails
+          # again with the same one-line message, so the probe produced noise, not diagnosis. The real
+          # error is extracted by the `diagnose-compile` job (see the comment there) - this step just
+          # keeps the Gradle-level failure summary and the log tail beside the test output.
+          grep -hB 2 -A 14 "What went wrong" /tmp/tests.log 2>/dev/null | head -120 > /tmp/build-errors.txt || true
+          { echo; echo "===== tests.log tail ====="; tail -60 /tmp/tests.log; } >> /tmp/build-errors.txt 2>/dev/null || true
+          cp /tmp/build-errors.txt /tmp/diagnostics-probe.txt 2>/dev/null || true
+          head -40 /tmp/build-errors.txt 2>/dev/null || true
+          exit 0
 
       - name: Surface the failure (only when tests did not pass)
         if: failure() && steps.tests.outcome == 'failure'

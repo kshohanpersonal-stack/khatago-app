@@ -134,22 +134,33 @@ unreadable both in the browser *and* from a sandbox. The build job publishes its
 ```bash
 # 1. The ci-diagnostics branch (pushed only by a failing run) — plain git, never blocked:
 git fetch origin ci-diagnostics
-git show FETCH_HEAD:build-errors.txt | less      # unfiltered :app:compileDebugKotlin --info tail
-git show FETCH_HEAD:kapt-disabled.txt | less     # real source errors, kapt tasks skipped
-git show FETCH_HEAD:diagnostics.md               # the short filtered summary
-git show FETCH_HEAD:tests.log                    # the whole test step, verbatim
+git show FETCH_HEAD:kapt-disabled.md   # every `e:` line from the five probes, then the failure summaries
+git show FETCH_HEAD:kapt-disabled.txt  | less   # last 150 raw lines of each probe
+git show FETCH_HEAD:build-errors.txt   | less   # the Gradle "What went wrong" block + tests.log tail
+git show FETCH_HEAD:diagnostics.md     # annotations-style short summary from the build job
+git show FETCH_HEAD:tests.log          # the whole test step, verbatim
 ```
 
 Delete the branch when the build is green again: `git push origin :ci-diagnostics`.
 
-#### Why `kapt-disabled.txt` exists
+#### Why the `diagnose-compile` job exists
 
-`e: Could not load module <Error module>` from `kaptGenerateStubs*` is a known kapt behaviour: **it is
-not the error, it is kapt refusing to report the errors** it found in the sources. The build never
-disables kapt — `compileDebugKotlin` still runs after it, Room still runs, and the APK still needs both.
-The `diagnose-compile` job runs the *same* Gradle invocation once more through an init script that skips
-only the `kapt*` tasks, so the ordinary Kotlin compiler can print the file, line and symbol. That job is
-`if: failure()`, is clearly named, and its output is a diagnosis rather than a build.
+`e: Could not load module <Error module>` from `kaptGenerateStubs*` is a known kapt behaviour, and it is
+**not the error**. The compiler emits it when something in the compilation resolves to an *error
+descriptor* — a reference to a type or member that does not exist — and in stub-generation mode kapt
+replaces its own diagnostics with that single line. So the message names the *mechanism* (an unresolved
+reference somewhere in ~90 files) and not the file, and re-running the same task with `--info` prints the
+same line again. The fix is to make the same sources compile through a path that does report diagnostics.
+
+The build itself never disables kapt — `compileDebugKotlin` runs after it, Room's processor runs, and the
+APK needs both. The `diagnose-compile` job, which runs only `if: failure()`, re-compiles the same sources
+five ways and publishes every log: `stubs-baseline` (the failing task, with `--stacktrace`, to prove where
+the exception comes from), `kaptless-compile` and `kaptless-tests` (an init script that sets
+`enabled = false` on every `kapt*` task, so the ordinary Kotlin compile — same sources, same classpath,
+no stub mode — reports `file:line:col` for main and for the unit-test source set), `stubs-no-ic`
+(incremental compilation off, to rule the IC state in or out) and `stubs-no-cc` (configuration cache off,
+to rule out anything KGP computes lazily at execution time). Its output is a diagnosis, never a build, and
+it is labelled as such in the job name.
 
 ## Enabling CI in a fresh clone
 
