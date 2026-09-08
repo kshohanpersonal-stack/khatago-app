@@ -110,118 +110,141 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
-      # ONE step, on purpose. The previous version split the probes across steps and passed state through
-      # /tmp/diag; the published report came back with `progress: probe-step-failure` - i.e. it proved
-      # nothing about the probes, only about which files survived between steps. A run costs several
-      # minutes, and a job that cannot say "probe 2 did not run" wastes it. Everything below therefore
-      # happens in a single shell, every command's status is captured into the report itself, and each
-      # probe writes its own file before the next one starts.
-      #
-      # Five explicit gradle invocations, never a loop over a task list: a `while read ... done < list`
-      # loop whose body runs Gradle has Gradle consume the loop's own stdin, so four of five probes
-      # silently never ran and the report read "no diagnostics anywhere".
-      - name: Probe the compiler four ways and publish what it says
-        continue-on-error: true
+      - name: Prove the publishing path works on its own
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          # Two rounds failed with nothing published at all, which meant the *publisher* was as suspect as
+          # the probes. It is therefore exercised first, on its own, with no gradle, no functions and no
+          # heredocs: if `marker.txt` shows up on the branch, the publisher is proven and anything missing
+          # afterwards is the probe step's fault, not a mystery.
           set -uo pipefail
           d=$GITHUB_WORKSPACE/.diag
-          # Written inside the workspace, not /tmp: three rounds in a row published a report whose
-          # progress marker proved that files written by an earlier step were not visible to the next
-          # one, so nothing about the probes survived. This step now does everything itself, and it
-          # still reports which command did not run.
           mkdir -p "$d"
-          {
-            echo "# KhataGo compile diagnostics for run $GITHUB_RUN_ID"
-            echo
-            echo '```'
-            echo "step started; gradle=$(command -v gradle || echo MISSING) java=$(java -version 2>&1 | head -1)"
-            echo "workspace: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null)"
-            echo '```'
-          } > "$d/report.md"
+          cat > "$d/publish.sh" <<'PUBEOF'
+          #!/usr/bin/env bash
+          set -uo pipefail
+          d="$GITHUB_WORKSPACE/.diag"
+          r="$d/repo"
+          rm -rf "$r"
+          git init -q "$r"
+          git -C "$r" config user.name ci-diagnostics
+          git -C "$r" config user.email ci@localhost
+          for f in "$d"/*.md "$d"/*.txt "$d"/*.log; do
+            [ -e "$f" ] && cp "$f" "$r/$(basename "$f")"
+          done
+          git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD > "$r/rev.txt" 2>/dev/null || true
+          git -C "$r" add -A >/dev/null 2>&1 || true
+          git -C "$r" commit -qm "diag $GITHUB_RUN_ID" >/dev/null 2>&1 || true
+          if git -C "$r" push -q --force \
+              "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+              HEAD:refs/heads/ci-diagnostics; then
+            echo "PUBLISHED $(git -C "$r" ls-files | tr '\n' ' ')"
+          else
+            echo "::warning::publish push failed"
+          fi
+          PUBEOF
+          chmod +x "$d/publish.sh"
+          echo "publisher-ok; job=$GITHUB_JOB; gradle=$(command -v gradle || echo MISSING)" > "$d/publisher-note.md"
+          "$d/publish.sh"
+
+      # Five explicit gradle invocations, never a loop over a task list: a `while read ... done < list`
+      # loop whose body runs Gradle has Gradle consume the loop's own stdin, so four of five probes
+      # silently never ran and the report read "no diagnostics anywhere".
+      #
+      # `e: Could not load module <Error module>` from the build job is emitted when something resolves
+      # to an *error descriptor* (a reference to a type or member that does not exist); in stub-generation
+      # mode kapt substitutes that one line for the compiler's real diagnostics, so no file:line ever
+      # reaches stdout. The kapt-less probes below are the path that prints file:line:col. The build job
+      # itself still runs kapt, Room, the tests and both assemble tasks: nothing here weakens CI.
+      - name: Probe the compiler four ways
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          exec 5>> "$GITHUB_WORKSPACE/.diag/trace.txt"
+          BASH_XTRACEFD=5
+          set -x
+          d=$GITHUB_WORKSPACE/.diag
+          mkdir -p "$d"
+          printf 'gradle-before\n' > "$d/gradle-before.txt"
           cat > "$d/no-kapt.init.gradle.kts" <<'INITEOF'
           gradle.beforeProject {
               tasks.matching { it.name.startsWith("kapt") }.configureEach { enabled = false }
           }
           INITEOF
-          probe() {   # $1 = number, $2 = human label, rest = gradle args
-            local n="$1"; shift
-            local label="$1"; shift
+          echo "gradle on PATH: $(command -v gradle || echo MISSING)" > "$d/tools.txt"
+          java -version >> "$d/tools.txt" 2>&1 || true
+          gradle --version >> "$d/tools.txt" 2>&1 || echo "gradle --version failed" >> "$d/tools.txt"
+          : > "$d/report.md"
+          {
+            echo "# KhataGo compile diagnostics for run $GITHUB_RUN_ID"
+            echo
+            echo '```'
+            cat "$d/tools.txt" 2>/dev/null
+            echo '```'
+            echo
+          } >> "$d/report.md"
+          for spec in \
+            "1|compileDebugKotlin, kapt tasks disabled|-I $d/no-kapt.init.gradle.kts|:app:compileDebugKotlin" \
+            "2|compileDebugUnitTestKotlin, kapt tasks disabled|-I $d/no-kapt.init.gradle.kts|:app:compileDebugUnitTestKotlin" \
+            "3|stub task, incremental compilation off|-Pkotlin.incremental=false -Pkotlin.incremental.useModuleDetection=false|:app:kaptGenerateStubsDebugKotlin" \
+            "4|stub task, no configuration cache|--no-configuration-cache|:app:kaptGenerateStubsDebugKotlin"; do
+            IFS='|' read -r n label args task <<EOF
+          $spec
+          EOF
             echo "--- probe $n: $label"
-            gradle --no-daemon --console=plain --stacktrace "$@" < /dev/null > "$d/p$n.log" 2>&1
-            local rc=$?
-            local lines diag
-            lines=$(grep -c "" "$d/p$n.log" 2>/dev/null || echo 0)
-            diag=$(grep -cE "^(e: |w: file:)" "$d/p$n.log" 2>/dev/null || echo 0)
+            # `gradle` is the distribution installed by gradle/actions/setup-gradle; if that is not on
+            # PATH here the log says so instead of pretending the build was clean.
+            # shellcheck disable=SC2086
+            gradle --no-daemon --console=plain --stacktrace $args "$task" < /dev/null > "$d/p$n.log" 2>&1
+            rc=$?
             {
               echo "## Probe $n - $label"
               echo
-              echo "exit=$rc · log lines=$lines · compiler diagnostics=$diag"
+              echo "exit=$rc log_lines=$(grep -c "" "$d/p$n.log" 2>/dev/null) diagnostics=$(grep -cE '^(e: |w: file:)' "$d/p$n.log" 2>/dev/null)"
               echo
               echo '```'
-              grep -hE "^(e: |w: file:)|^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)|Caused by:|Exception is:" \
-                "$d/p$n.log" 2>/dev/null | head -45
+              grep -hE "^(e: |w: file:)|^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)|Caused by:" "$d/p$n.log" 2>/dev/null | head -45
               echo "--- raw tail"
               tail -70 "$d/p$n.log" 2>/dev/null
               echo '```'
               echo
             } >> "$d/report.md"
-            echo "probe$n exit=$rc lines=$lines diagnostics=$diag"
-          }
-          {
-            echo "Commit: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD) · job: $GITHUB_JOB · one step, one shell."
-            echo
-            echo "The build job's own message is always one line: \`e: Could not load module <Error module>\`."
-            echo "That is emitted when something resolves to an *error descriptor* - a reference to a type or"
-            echo "member that does not exist - and kapt's stub-generation mode substitutes it for the compiler's"
-            echo "real diagnostics, so no file:line ever reaches stdout from a kapt task. Probes 1 and 2 compile"
-            echo "the same sources through the ordinary Kotlin compile task with every kapt* task disabled, which"
-            echo "is the path that prints file:line:col. Probes 3 and 4 rule incremental compilation and the"
-            echo "configuration cache in or out. Nothing here weakens the build: the build job still runs kapt,"
-            echo "Room, the tests and both assemble tasks."
-            echo
-          } >> "$d/report.md"
-          probe 1 "compileDebugKotlin with kapt tasks disabled" -I "$d/no-kapt.init.gradle.kts" :app:compileDebugKotlin
-          probe 2 "compileDebugUnitTestKotlin with kapt tasks disabled" -I "$d/no-kapt.init.gradle.kts" :app:compileDebugUnitTestKotlin
-          probe 3 "stub task with incremental compilation off" -Pkotlin.incremental=false -Pkotlin.incremental.useModuleDetection=false :app:kaptGenerateStubsDebugKotlin
-          probe 4 "stub task without the configuration cache" --no-configuration-cache :app:kaptGenerateStubsDebugKotlin
-          echo "all probes finished" >> "$d/report.md"
-          cp /tmp/tests.log "$d/tests.log" 2>/dev/null || echo "no tests.log" > "$d/tests.log"
-          # Publish: a throwaway `git init` whose branch replaces ci-diagnostics wholesale, plus a copy of
-          # the report into the step summary so a second channel exists even when the push itself is the
-          # thing that failed.
-          r="$d/repo"
-          git init -q "$r"
-          git -C "$r" config user.name ci-diagnostics
-          git -C "$r" config user.email ci@localhost
-          cp "$d/report.md" "$r/kapt-disabled.md"
-          for n in 1 2 3 4; do cp "$d/p$n.log" "$r/probe$n.txt" 2>/dev/null || true; done
-          cp "$d/tests.log" "$r/tests.log" 2>/dev/null || true
-          git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD > "$r/rev.txt" 2>/dev/null || true
-          git -C "$r" add -A
-          git -C "$r" commit -qm "diag $GITHUB_RUN_ID"
-          echo "commit=$(git -C "$r" rev-parse --short HEAD) files=$(git -C "$r" ls-files | tr '\n' ' ')"
-          git -C "$r" push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            HEAD:refs/heads/ci-diagnostics && echo "PUBLISHED" || echo "::warning::push failed"
-          cat "$d/report.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-          echo "done"
-
-      - name: Confirm what landed on the diagnostics branch
-        if: always()
-        run: |
-          set -uo pipefail
-          # Prints the truth about the run into the (browser-readable) log even if the push above failed:
-          # exit statuses are one line per probe, so "probe 2 did not run" can never be misread as
-          # "probe 2 found nothing".
-          for f in $GITHUB_WORKSPACE/.diag/p*.log; do
-            [ -e "$f" ] || { echo "no probe logs at all - the probe step did not reach its gradle calls"; break; }
-            echo "$(basename "$f"): $(grep -c "" "$f") lines, $(grep -cE '^(e: |w: file:)' "$f") diagnostics"
-            grep -E "^(e: |w: file:)" "$f" | head -12
+            echo "probe$n exit=$rc" >> "$d/status.txt"
           done
+          set +x
+          echo "PROBES FINISHED" >> "$d/status.txt"
           exit 0
 
-  # --------------------------------------------------------------------------- build + test
+      - name: Publish probes and report
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          d=$GITHUB_WORKSPACE/.diag
+          mkdir -p "$d"
+          cp /tmp/tests.log "$d/tests.log" 2>/dev/null || echo "no tests.log" > "$d/tests.log"
+          tail -400 /tmp/tests.log > "$d/tests-tail.txt" 2>/dev/null || true
+          # If the probe step died before it could write a report, say so loudly instead of publishing
+          # an empty file that reads like "the probes found nothing".
+          if [ ! -s "$d/report.md" ]; then
+            {
+              echo "# KhataGo diagnostics for run $GITHUB_RUN_ID"
+              echo
+              echo "**The probe step produced no report.** Its trace and status are below; whatever is in"
+              echo "them is the answer to why (a shell problem in CI, not a clean build)."
+              echo '```'
+              tail -40 "$d/status.txt" "$d/trace.txt" 2>/dev/null
+              echo '```'
+            } > "$d/report.md"
+          else
+            { echo "## status"; echo; echo '```'; cat "$d/status.txt" 2>/dev/null; tail -40 "$d/trace.txt" 2>/dev/null; echo '```'; } >> "$d/report.md"
+          fi
+          "$d/publish.sh"
+
+
   build:
     name: Test, lint and assemble
     runs-on: ubuntu-latest
