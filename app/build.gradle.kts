@@ -154,9 +154,16 @@ android {
 
 kapt {
     arguments {
+        // Absolute path, which is what lets one setting serve every variant instead of needing a
+        // @RoomDatabase.Config class per source set to rewrite a relative one.
         arg("room.schemaLocation", "$projectDir/schemas")
     }
     correctErrorTypes = true
+    // Maps errors reported against kapt's generated stubs back onto the real Kotlin source positions.
+    // Without it a stub problem points at a file nobody wrote; with it the diagnostic names a line of
+    // ours. (Note: kapt's verbosity is a *Gradle* property, `kapt.verbose`, set in gradle.properties —
+    // it is not a KaptExtension member, and writing `verbose = true` here would fail configuration.)
+    mapDiagnosticLocations = true
 }
 
 dependencies {

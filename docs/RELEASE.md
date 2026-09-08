@@ -126,6 +126,31 @@ unit test here can see; `app/proguard-rules.pro` keeps Room's generated implemen
 5. Privacy policy field: link [docs/PRIVACY.md](PRIVACY.md) (or a page generated from it). A policy that
    says "we collect nothing" is acceptable to the store only if the manifest proves it — and here it does.
 
+## When CI is red and you cannot read the log
+
+GitHub serves Actions logs and artefacts from hosts that some networks block, so a red run can be
+unreadable both in the browser *and* from a sandbox. The build job publishes its own report instead:
+
+```bash
+# 1. The ci-diagnostics branch (pushed only by a failing run) — plain git, never blocked:
+git fetch origin ci-diagnostics
+git show FETCH_HEAD:build-errors.txt | less      # unfiltered :app:compileDebugKotlin --info tail
+git show FETCH_HEAD:kapt-disabled.txt | less     # real source errors, kapt tasks skipped
+git show FETCH_HEAD:diagnostics.md               # the short filtered summary
+git show FETCH_HEAD:tests.log                    # the whole test step, verbatim
+```
+
+Delete the branch when the build is green again: `git push origin :ci-diagnostics`.
+
+#### Why `kapt-disabled.txt` exists
+
+`e: Could not load module <Error module>` from `kaptGenerateStubs*` is a known kapt behaviour: **it is
+not the error, it is kapt refusing to report the errors** it found in the sources. The build never
+disables kapt — `compileDebugKotlin` still runs after it, Room still runs, and the APK still needs both.
+The `diagnose-compile` job runs the *same* Gradle invocation once more through an init script that skips
+only the `kapt*` tasks, so the ordinary Kotlin compiler can print the file, line and symbol. That job is
+`if: failure()`, is clearly named, and its output is a diagnosis rather than a build.
+
 ## Enabling CI in a fresh clone
 
 Workflows ship inert until Actions is switched on:
@@ -141,7 +166,10 @@ gh api -X PUT repos/:owner/:repo/actions/workflows/ci.yml/enable 2>/dev/null || 
 - `release.yml` runs on `v*` tags: the same gates, then `assembleRelease :app:bundleRelease`, checksums,
   signature verification, and a GitHub Release. Absent signing secrets ⇒ **unsigned** artefacts plus a
   warning in the summary; it never fakes a signature.
-- Neither workflow commits anything, deploys anything, or touches a store.
+- Neither workflow deploys anything or touches a store. `ci.yml` holds `contents: write` for exactly one
+  purpose — publishing a red run's diagnostics to the `ci-diagnostics` branch, the only log channel
+  reachable from networks that block GitHub's Actions hosts. It never writes to `main`; `release.yml`
+  publishes only a Release for a `v*` tag.
 
 ## Hotfix branches, in one line
 

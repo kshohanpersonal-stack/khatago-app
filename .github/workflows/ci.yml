@@ -79,6 +79,80 @@ jobs:
           done
           exit $rc
 
+  # --------------------------------------------------------------------------- root-cause probe
+  # `e: Could not load module <Error module>` from a kapt task is not the error; it is kapt declining
+  # to print the errors it found. This job re-runs the same compile with an init script that skips the
+  # kapt tasks so the ordinary Kotlin compiler can name the file, line and symbol, then publishes that
+  # on the ci-diagnostics branch.
+  #
+  # It is a *diagnostic*, never a build: the main job below still compiles with kapt enabled, still
+  # runs Room's processor, and still produces the APK. Nothing here weakens what CI verifies.
+  diagnose-compile:
+    name: Publish root-cause diagnostics
+    runs-on: ubuntu-latest
+    needs: build
+    if: failure()
+    permissions:
+      contents: write   # ci-diagnostics branch only; the log/artefact hosts are unreachable from some networks
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Compile with kapt tasks skipped, so the real errors surface
+        id: probe
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          cat > /tmp/skip-kapt.init.gradle.kts <<'INITEOF'
+          // Diagnostic-only: disable the kapt tasks so compileDebugKotlin reports the source errors
+          // that kapt's stub task hides behind "Could not load module <Error module>".
+          gradle.beforeProject {
+              tasks.matching { it.name.startsWith("kapt") }.configureEach { enabled = false }
+          }
+          INITEOF
+          gradle --no-daemon --console=plain -I /tmp/skip-kapt.init.gradle.kts \
+            :app:compileDebugKotlin --info 2>&1 | tee /tmp/kapt-disabled.log | tail -60 || true
+          echo "Compiler exit path recorded; report published regardless of outcome."
+
+      - name: Publish diagnostics branch
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          dest=$(mktemp -d)
+          git -C "$dest" init -q -b ci-diagnostics
+          git -C "$dest" config user.name ci-diagnostics
+          git -C "$dest" config user.email ci@localhost
+          {
+            echo "# KhataGo compile diagnostics for run $GITHUB_RUN_ID"
+            echo
+            echo "Commit: $(git rev-parse --short HEAD) · branch: ${GITHUB_REF_NAME}"
+            echo
+            echo '```'
+            grep -E "^e: |^w: file:|error:|Caused by:|> Task" /tmp/kapt-disabled.log 2>/dev/null | head -120
+            echo '```'
+            echo
+            echo "## First 60 'e:' lines (file:line:col)"
+            echo '```'
+            grep -E "^e: " /tmp/kapt-disabled.log 2>/dev/null | head -60
+            echo '```'
+          } > "$dest/kapt-disabled.md"
+          tail -1200 /tmp/kapt-disabled.log > "$dest/kapt-disabled.txt" 2>/dev/null || true
+          git -C "$dest" add -A
+          git -C "$dest" commit -qm "compile diagnostics for $GITHUB_RUN_ID"
+          git -C "$dest" push -q --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            ci-diagnostics:ci-diagnostics || echo "::warning::could not publish ci-diagnostics"
+
   # --------------------------------------------------------------------------- build + test
   build:
     name: Test, lint and assemble
@@ -126,17 +200,20 @@ jobs:
         if: failure() && steps.tests.outcome == 'failure'
         run: |
           set -uo pipefail
+          # The plain Kotlin compile is the one that reports real diagnostics, so its UNFILTERED log is
+          # what gets published. Filtering is what made three CI rounds useless: the compiler's error
+          # lines do not all start with "e:", and a grep matching nothing looks exactly like a build that
+          # produced no errors.
           out=/tmp/probe.txt
           {
-            echo "### compileDebugKotlin (no kapt), --info"
-            gradle --no-daemon --console=plain :app:compileDebugKotlin --info 2>&1 |
-              grep -E "^e: |^w: file|error:|Caused by" | head -40
-            echo "### kaptGenerateStubsDebugKotlin --info"
-            gradle --no-daemon --console=plain :app:kaptGenerateStubsDebugKotlin --info 2>&1 |
-              grep -E "^e: |^w: file|error:|Caused by|Exception: |warning: " | head -40
+            echo "### :app:kaptGenerateStubsDebugKotlin --info (unfiltered tail)"
+            gradle --no-daemon --console=plain :app:kaptGenerateStubsDebugKotlin --info 2>&1 | tail -300
+            echo "### :app:compileDebugKotlin --info (unfiltered tail)"
+            gradle --no-daemon --console=plain :app:compileDebugKotlin --info 2>&1 | tail -400
           } > "$out" 2>&1 || true
-          cat "$out"
-          cp "$out" /tmp/diagnostics-probe.txt || true
+          cp "$out" /tmp/diagnostics-probe.txt 2>/dev/null || true
+          cp "$out" /tmp/build-errors.txt 2>/dev/null || true
+          head -40 "$out" 2>/dev/null || true
 
       - name: Surface the failure (only when tests did not pass)
         if: failure() && steps.tests.outcome == 'failure'
@@ -203,6 +280,7 @@ jobs:
           git -C "$dest" init -q -b ci-diagnostics
           git -C "$dest" config user.name ci-diagnostics && git -C "$dest" config user.email ci@localhost
           cp "$diag" "$dest/diagnostics.md"
+          cp /tmp/build-errors.txt "$dest/build-errors.txt" 2>/dev/null || true
           cp /tmp/tests.log "$dest/tests.log" 2>/dev/null || true
           cp /tmp/rev.txt "$dest/rev.txt"
           git -C "$dest" add -A && git -C "$dest" commit -qm "diagnostics for $GITHUB_RUN_ID"

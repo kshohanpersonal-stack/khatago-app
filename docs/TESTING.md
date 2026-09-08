@@ -123,3 +123,9 @@ for t in check_braces audit_imports audit_symbols audit_data_api; do python3 too
 
 They prove nothing about types, and no amount of them adds up to a build. A green sandbox run is a licence to
 open a PR, not a licence to say "tests pass".
+
+This is not theoretical. CI caught two defects that every one of these checkers passed — a duplicate `clean`
+task registration that failed Gradle's *configuration* phase, and a `java.util.Base64` reference inside a
+Gradle script (where `java` resolves to the plugin extension, not the package). Both are legal Kotlin and
+both were invisible to structural checks, because both are errors about the *build*, not about the source.
+The lesson to keep: these scripts can prove a tree is self-consistent, never that it compiles.
