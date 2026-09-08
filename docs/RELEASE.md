@@ -153,14 +153,16 @@ reference somewhere in ~90 files) and not the file, and re-running the same task
 same line again. The fix is to make the same sources compile through a path that does report diagnostics.
 
 The build itself never disables kapt — `compileDebugKotlin` runs after it, Room's processor runs, and the
-APK needs both. The `diagnose-compile` job, which runs only `if: failure()`, re-compiles the same sources
-five ways and publishes every log: `stubs-baseline` (the failing task, with `--stacktrace`, to prove where
-the exception comes from), `kaptless-compile` and `kaptless-tests` (an init script that sets
-`enabled = false` on every `kapt*` task, so the ordinary Kotlin compile — same sources, same classpath,
-no stub mode — reports `file:line:col` for main and for the unit-test source set), `stubs-no-ic`
-(incremental compilation off, to rule the IC state in or out) and `stubs-no-cc` (configuration cache off,
-to rule out anything KGP computes lazily at execution time). Its output is a diagnosis, never a build, and
-it is labelled as such in the job name.
+APK needs both. The `diagnose-compile` job, which runs only `if: failure()`, re-compiles the same sources five ways, as
+five explicit steps (never a shell loop over a task list: Gradle reads stdin, so a `while read ... done <
+list` loop swallows its own input and the remaining probes silently do not run). Probe 1 repeats the
+failing task with `--stacktrace` to expose the whole exception chain; probes 2 and 3 run
+`compileDebugKotlin` and `compileDebugUnitTestKotlin` through an init script that sets `enabled = false` on
+every `kapt*` task — same sources, same classpath, no stub mode — which is the path that prints
+`file:line:col`; probe 4 turns incremental compilation off, and probe 5 the configuration cache, to rule
+those two mechanisms in or out. Each probe's raw tail is published as its own file (`probe1.txt` …
+`probe5.txt`) beside a combined `kapt-disabled.md`. Nothing here is a build: the real job still runs kapt,
+Room and the tests, and the job is named for what it produces.
 
 ## Enabling CI in a fresh clone
 
