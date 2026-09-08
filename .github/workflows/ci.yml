@@ -141,6 +141,19 @@ jobs:
           # "^e:" anchor alone misses lines. Anything that smells like a diagnostic is fair game.
           emit "diagnostic" "error:|warning:|unresolved|expecting|Overload resolution|Type mismatch|No value passed|cannot be applied|None of the following"
           emit "kapt" "kapt|Kapt|NonExistentClass"
+          # Gradle prints "Compilation error. See log for more details" and sends the actual compiler
+          # output to the full log — exactly the channel a sandboxed reviewer cannot read. Re-running
+          # the one failing task with --info puts every `e:` line on stdout; it costs ~30 s, and only
+          # on a run that is already red.
+          task=$(grep -hoE "Execution failed for task '[^']+'" /tmp/tests.log 2>/dev/null |
+            head -1 | sed "s/Execution failed for task '//; s/'//")
+          if [ -n "${task:-}" ]; then
+            # A workflow-command value may not contain ':' — it terminates the `key=value` list.
+            title="compiler-detail-${task//:/_}"
+            gradle --no-daemon "$task" --info 2>&1 |
+              grep -E "e: |error:" | head -25 | cut -c1-500 |
+              while IFS= read -r line; do echo "::error file=build,title=${title}::${line}"; done
+          fi
           echo "Tests failed; see the annotations on this check run."
 
       - name: Android Lint (report only, does not fail the build)
