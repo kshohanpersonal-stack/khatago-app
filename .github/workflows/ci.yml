@@ -125,15 +125,15 @@ jobs:
           }
           echo "### Test failure detail" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -hE "^e: |^> Task .*FAILED|FAILURE:|What went wrong|Caused by:|error:|unresolved reference:|expecting" \
-            /tmp/tests.log 2>/dev/null | head -40 >> "$GITHUB_STEP_SUMMARY" || true
+          grep -hE "(^| )e: |^> Task .*FAILED|FAILURE:|What went wrong|Caused by:|error:|unresolved reference:|expecting" \
+            /tmp/tests.log 2>/dev/null | sed 's|file:///home/runner/work/[^/]*/[^/]*/||' | head -50 >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           grep -hA 6 "What went wrong" /tmp/tests.log 2>/dev/null | head -20 | cut -c1-600 |
             while IFS= read -r line; do echo "::error file=build,title=gradle-what-went-wrong::${line}"; done
           tail -6 /tmp/tests.log 2>/dev/null | cut -c1-600 | while IFS= read -r line; do
             echo "::error file=build,title=tests-log-tail::${line}"
           done
-          emit "compile-error" "^e: "
+          emit "compile-error" "(^| )e: "
           emit "task-failed" "^> Task .*FAILED"
           emit "what-went-wrong" "What went wrong|Caused by:"
           emit "unresolved" "unresolved reference:|expecting"
