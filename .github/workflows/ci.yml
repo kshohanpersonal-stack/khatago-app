@@ -110,22 +110,32 @@ jobs:
       # sandbox this project was written in), so a red test run repeats itself where the API *can* read
       # it: as check annotations (list-annotations API) and in the run summary markdown. Capped, because
       # an unbounded error dump buries the one line that matters.
+      # The log/artefact hosts are not reachable from every reviewer's network (they were not from the
+      # sandbox this project was written in), and a job summary is not readable through the API. So a red
+      # run repeats itself as *annotations*, which the checks API does serve: the ten most diagnostic
+      # lines, plus every unresolved reference. Deliberately no `pipefail` here — a grep that finds
+      # nothing must not be what fails this step.
       - name: Surface the failure (only when tests did not pass)
         if: failure() && steps.tests.outcome == 'failure'
         run: |
-          set -uo pipefail
-          echo "#### Kotlin compile errors (up to 12)" >> "$GITHUB_STEP_SUMMARY"
+          emit() {
+            # $1 = label, $2 = regex
+            grep -hE "$2" /tmp/tests.log 2>/dev/null | head -10 | cut -c1-600 |
+              while IFS= read -r line; do echo "::error file=build,title=$1::${line}"; done
+          }
+          echo "### Test failure detail" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -E "^e: " /tmp/tests.log | head -12 >> "$GITHUB_STEP_SUMMARY" || true
+          grep -hE "^e: |^> Task .*FAILED|FAILURE:|What went wrong|Caused by:|error:|unresolved reference:|expecting" \
+            /tmp/tests.log 2>/dev/null | head -40 >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "#### Gradle failure" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -E "FAILURE:|What went wrong|Caused by|^> Task .*FAILED" /tmp/tests.log | head -20 >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          grep -E "^e: " /tmp/tests.log | head -12 | while IFS= read -r line; do
-            echo "::error file=build,title=unit-test compile error::${line:0:400}"
+          tail -12 /tmp/tests.log 2>/dev/null | cut -c1-600 | while IFS= read -r line; do
+            echo "::error file=build,title=tests-log-tail::${line}"
           done
-          echo "Tests failed; the detail is above and in this run's summary."
+          emit "compile-error" "^e: "
+          emit "task-failed" "^> Task .*FAILED"
+          emit "what-went-wrong" "What went wrong|Caused by:"
+          emit "unresolved" "unresolved reference:|expecting"
+          echo "Tests failed; see the annotations on this check run."
 
       - name: Android Lint (report only, does not fail the build)
         if: always()
