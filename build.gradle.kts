@@ -1,3 +1,5 @@
+import java.util.Locale
+
 // KhataGo — root build script.
 // All real configuration lives in :app. Plugins are version-pinned in settings.gradle.kts.
 plugins {

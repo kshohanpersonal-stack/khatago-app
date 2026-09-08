@@ -1,4 +1,5 @@
 import java.io.FileInputStream
+import java.util.Base64
 import java.util.Properties
 
 /*
@@ -51,7 +52,7 @@ fun resolvedKeystoreFile(): File {
     }
     val target = layout.buildDirectory.file("keystore/khatago-release.keystore").get().asFile
     target.parentFile?.mkdirs()
-    target.writeBytes(java.util.Base64.getMimeDecoder().decode(encoded))
+    target.writeBytes(Base64.getMimeDecoder().decode(encoded))
     return target
 }
 
