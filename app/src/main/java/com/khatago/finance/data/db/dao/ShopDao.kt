@@ -160,4 +160,52 @@ interface ShopDao {
     )
     fun observeOutstanding(): Flow<Long>
 
+    /**
+     * Everything that would disappear if this shop were deleted. The delete dialog must state the
+     * true blast radius before the user commits, which is why this is a query and not a UI guess.
+     */
+    @Query(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM shop_credits WHERE shopId = :shopId) AS creditCount,
+            (
+                SELECT COUNT(*) FROM payments p
+                WHERE p.payableType = 'shop_credit'
+                  AND p.payableId IN (SELECT id FROM shop_credits WHERE shopId = :shopId)
+            ) AS paymentCount
+        """,
+    )
+    suspend fun deletionImpact(shopId: Long): ShopDeletionRow
+
+    /**
+     * One-shot flat list of every credit line with its paid total, for CSV export and reports.
+     *
+     * Deliberately *not* a Flow: an export runs once inside a coroutine and must not hold a database
+     * observation open for the length of a file write. The join is repeated here instead of reusing
+     * the Flow query so the export can never accidentally subscribe to live updates mid-write and
+     * produce a file whose rows disagree with each other.
+     */
+    @Query(
+        """
+        SELECT
+            c.id AS id,
+            c.shopId AS shopId,
+            s.name AS shopName,
+            c.productName AS productName,
+            c.quantity AS quantity,
+            c.unitPriceMinor AS unitPriceMinor,
+            c.totalAmountMinor AS totalMinor,
+            COALESCE((SELECT SUM(p.amountMinor) FROM payments p
+                       WHERE p.payableType = 'shop_credit' AND p.payableId = c.id), 0) AS paidMinor,
+            c.purchaseDateEpochDay AS purchaseDateEpochDay,
+            c.dueDateEpochDay AS dueDateEpochDay,
+            c.cancelled AS cancelled,
+            c.notes AS notes
+        FROM shop_credits c
+        JOIN shops s ON s.id = c.shopId
+        ORDER BY c.purchaseDateEpochDay DESC, c.id DESC
+        """,
+    )
+    suspend fun findAllCreditRows(): List<CreditRow>
+
 }

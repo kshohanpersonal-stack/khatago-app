@@ -1,0 +1,66 @@
+KHataGo
+Copyright 2026 KhataGo contributors
+
+This product includes software developed at the Khatago project
+(https://github.com/kshohanpersonal-stack/khatago-app).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+KhataGo is a single, fully offline Android application. It links only the following
+open-source libraries, each under the Apache License 2.0. There is no analytics SDK,
+no advertising SDK, no crash reporter, no billing library and no network stack — the
+application manifest does not request the INTERNET permission, and that absence is the
+guarantee, not a setting.
+
+  * Kotlin standard library and kotlinx-coroutines / kotlinx-serialization
+    (org.jetbrains.kotlin, org.jetbrains.kotlinx) — Apache-2.0
+  * AndroidX Core (core-ktx), AppCompat, Activity Compose, Splashscreen — Apache-2.0
+  * Jetpack Compose runtime, foundation and Material 3 (androidx.compose.*) — Apache-2.0
+  * Material Icons core + extended (androidx.compose.material:material-icons-core / -extended) — Apache-2.0
+  * Navigation Compose (androidx.navigation) — Apache-2.0
+  * Room runtime, ktx and Common (androidx.room) — Apache-2.0
+  * Android framework SharedPreferences (used only for the app-lock store, which is deliberately
+    outside the database so that a backup or a data wipe can never carry or erase it) — Apache-2.0
+  * Biometric (androidx.biometric) — Apache-2.0
+  * WorkManager (androidx.work) — Apache-2.0
+  * Lifecycle Runtime / ViewModel Compose (androidx.lifecycle) — Apache-2.0
+
+Test-only dependencies (never shipped in an APK): JUnit 4, kotlinx-coroutines-test,
+Turbine, androidx.arch.core:core-testing, androidx.room:room-testing,
+androidx.test:core / androidx.test.ext:junit and Robolectric.
+
+The full license text of each dependency ships inside the app's own dependency graph; the
+above list is the attribution that matters for redistribution: every one of them permits
+redistribution under Apache-2.0 provided this notice and their notices are retained.
+
+--------------------------------------------------------------------------------
+Brand assets
+--------------------------------------------------------------------------------
+
+The launcher icon, splash mark and wordmark under `app/src/main/res/` are generated from
+the master artwork in `assets_src/brand/`. The checked-in master is an original placeholder
+produced for this repository so that the build is self-contained; it is not the final brand
+art. To substitute official artwork, replace `assets_src/brand/flat_square.png` and
+`logo_wordmark.png`, then re-run `assets_src/brand/regenerate_icons.sh`. See docs/DESIGN.md.
+
+--------------------------------------------------------------------------------
+No warranty of financial correctness
+--------------------------------------------------------------------------------
+
+KhataGo is a record-keeping tool. It does not connect to any bank, does not verify any
+balance, and is not an accounting or legal record of debt. Every number it shows is derived
+from what its user typed. See docs/MONEY.md for the arithmetic rules it implements.

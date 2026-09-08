@@ -31,10 +31,20 @@ class CatalogRepository(private val database: KhataGoDatabase) {
         if (profile.currencyCode.isBlank()) {
             return@withTransaction SaveResult.Invalid("Pick a currency.")
         }
+        // There is exactly one profile row, and it is keyed to id = 1. Callers routinely build a fresh
+        // entity (id = 0), so the id is normalised here: with `@Insert(REPLACE)` an id of 0 would insert
+        // a *second* profile row while leaving the first one in place, and "SELECT * FROM profile
+        // LIMIT 1" would then show whichever row SQLite happened to read first.
+        val existing = database.catalogDao().findProfile()
         database.catalogDao().upsertProfile(
             profile.copy(
+                id = 1,
                 displayName = name.takeIf { it.isNotEmpty() },
-                createdAt = if (profile.createdAt == 0L) System.currentTimeMillis() else profile.createdAt,
+                createdAt = if (profile.createdAt == 0L) {
+                    existing?.createdAt?.takeIf { it > 0L } ?: System.currentTimeMillis()
+                } else {
+                    profile.createdAt
+                },
                 updatedAt = System.currentTimeMillis(),
             ),
         )
@@ -55,8 +65,19 @@ class CatalogRepository(private val database: KhataGoDatabase) {
 
     suspend fun setting(key: String): String? = database.catalogDao().settingValue(key)
 
+    /**
+     * Lenient on purpose: "1"/"0" and "true"/"false" are both written into this table (the reminder
+     * scheduler uses "1"/"0" so the value survives an sqlite query by hand), and a reader that only
+     * accepted one spelling would silently flip a user's switch the next time they opened the app.
+     */
     suspend fun boolSetting(key: String, default: Boolean): Boolean =
-        database.catalogDao().settingValue(key)?.toBooleanStrictOrNull() ?: default
+        database.catalogDao().settingValue(key)?.let { raw ->
+            when {
+                raw == "1" || raw.equals("true", ignoreCase = true) -> true
+                raw == "0" || raw.equals("false", ignoreCase = true) -> false
+                else -> default
+            }
+        } ?: default
 
     suspend fun intSetting(key: String, default: Int): Int =
         database.catalogDao().settingValue(key)?.toIntOrNull() ?: default

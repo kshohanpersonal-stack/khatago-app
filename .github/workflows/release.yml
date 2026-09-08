@@ -1,0 +1,167 @@
+name: Release build
+
+# Tag-driven, because "a release" for KhataGo means one thing: an APK/AAB a person can install,
+# built from a commit anyone can read. Signing material comes only from repository secrets; if the
+# secrets are absent the workflow still builds and publishes an *unsigned* artefact rather than
+# pretending to sign, and says so in the summary.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (defaults to the ref this was dispatched from)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # required to create the GitHub Release and upload assets
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GRADLE_VERSION: "8.9"
+  JAVA_VERSION: "17"
+
+jobs:
+  release:
+    name: Assemble, sign (if configured) and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A tag dispatch may name a different ref; fetch everything so that is possible.
+          fetch-depth: 0
+
+      - name: Resolve the tag to build
+        id: tag
+        run: |
+          set -euo pipefail
+          REF="${{ github.event.inputs.tag }}"
+          if [ -z "$REF" ]; then REF="${GITHUB_REF_NAME}"; fi
+          echo "name=$REF" >> "$GITHUB_OUTPUT"
+          echo "Building $REF"
+
+      # Secrets are never echoed, and the "is signing configured?" question is answered by writing
+      # each one to a file and testing whether the file has content: that avoids referencing the
+      # `secrets` context inside a shell, which is both fragile and an injection vector.
+      - name: Detect release signing configuration
+        id: signing
+        env:
+          KS_B64: ${{ secrets.KHATAGO_KEYSTORE_BASE64 }}
+          KS_PASSWORD: ${{ secrets.KHATAGO_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KHATAGO_KEY_ALIAS }}
+          KS_KEY_PASSWORD: ${{ secrets.KHATAGO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ok=true
+          for name in KS_B64 KS_PASSWORD KS_ALIAS KS_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then ok=false; fi
+          done
+          if [ "$ok" = true ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release signing is configured; artefacts will be signed."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::KHATAGO_KEYSTORE_* secrets are incomplete - publishing UNSIGNED artefacts. Set them with: gh secret set KHATAGO_KEYSTORE_BASE64 < keystore.b64"
+          fi
+
+      - name: Set up Android SDK (build-tools for aapt/apksigner verification)
+        uses: android-actions/setup-android@v3
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle ${{ env.GRADLE_VERSION }}
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Tests must pass before a release is cut
+        run: gradle --no-daemon :app:testDebugUnitTest
+
+      - name: Static checks
+        run: |
+          python3 tools/check_braces.py app/src
+          python3 tools/audit_imports.py app/src
+          python3 tools/audit_symbols.py
+          python3 tools/audit_data_api.py
+        env:
+          PYTHONUNBUFFERED: "1"
+
+      - name: Assemble release APK and Play AAB
+        run: gradle --no-daemon :app:assembleRelease :app:bundleRelease
+        env:
+          KHATAGO_KEYSTORE_BASE64: ${{ secrets.KHATAGO_KEYSTORE_BASE64 }}
+          KHATAGO_KEYSTORE_PASSWORD: ${{ secrets.KHATAGO_KEYSTORE_PASSWORD }}
+          KHATAGO_KEY_ALIAS: ${{ secrets.KHATAGO_KEY_ALIAS }}
+          KHATAGO_KEY_PASSWORD: ${{ secrets.KHATAGO_KEY_PASSWORD }}
+
+      - name: Collect artefacts and checksums
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk out/ 2>/dev/null || true
+          cp app/build/outputs/bundle/release/*.aab out/ 2>/dev/null || true
+          ls -l out
+          (cd out && sha256sum * > SHA256SUMS || true)
+          cat out/SHA256SUMS || true
+
+      - name: Verify what was built
+        run: |
+          set -euo pipefail
+          apk=$(ls out/*.apk 2>/dev/null | head -1 || true)
+          if [ -n "$apk" ]; then
+            echo "### $apk"
+            BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | tail -1)
+            "${BT}aapt" dump permissions "$apk" | sed -n '1,20p' || true
+            if "${BT}apksigner" verify --print-certs "$apk" >/dev/null 2>&1; then
+              echo "Signed with the release key." | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Unsigned, which is expected when KHATAGO_KEYSTORE_* secrets are absent." | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+
+
+      - name: Create the GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          generate_release_notes: true
+          files: |
+            out/*.apk
+            out/*.aab
+            out/SHA256SUMS
+          body: |
+            KhataGo ${{ steps.tag.outputs.name }} — an offline shop-credit and debt ledger.
+
+            **Install:** download the `.apk`, enable "install unknown apps" for your file manager,
+            open it. `minSdk 26` (Android 8.0+). Debug builds and this release build are functionally
+            identical; the release build is R8-shrunk.
+
+            ${{ steps.signing.outputs.configured == 'true' && '**This build is signed with the project release key.**' || '**This build is UNSIGNED.** Add the `KHATAGO_KEYSTORE_*` repository secrets to sign it; install with `adb install -r` if your device refuses an unsigned package.' }}
+
+            **Verify:** `sha256sum -c SHA256SUMS`. Rebuild it yourself from the source at this tag and
+            compare checksums — the build is deterministic enough that a diff of the APK is a real review.
+
+            Your data never leaves your device: this app does not request the `INTERNET` permission.
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Release artefacts"
+            echo
+            echo "| Artefact | Signed |"
+            echo "|---|---|"
+            echo "| APK + AAB in \`out/\` | ${{ steps.signing.outputs.configured == 'true' && 'yes' || 'no (no KHATAGO_KEYSTORE_* secrets)' }} |"
+            echo
+            echo "Play Store upload needs the **AAB**. Direct distribution needs the **APK**."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -115,6 +115,95 @@ interface TransactionDao {
         """,
     )
     fun observeIncomeBetween(startEpochDay: Long, endEpochDay: Long): Flow<Long>
+    /**
+     * The unified income+expense feed, filtered in **one** place.
+     *
+     * Filters are applied to the *union*, never inside a branch: a `WHERE` on the second SELECT of
+     * a UNION ALL would silently filter only expenses and quietly leak unfiltered income — a real
+     * correctness trap in ledger UIs, so this query exposes one filtered view only. Amounts are
+     * always positive and the `kind` column decides the sign, so no arithmetic here depends on a
+     * convention that a future edit could break.
+     */
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT
+                id AS id,
+                'income' AS kind,
+                amountMinor AS amountMinor,
+                categoryName AS categoryName,
+                COALESCE(source, '') AS counterparty,
+                transactionDateEpochDay AS transactionDateEpochDay,
+                methodName AS methodName,
+                note AS note
+            FROM incomes
+            UNION ALL
+            SELECT
+                id AS id,
+                'expense' AS kind,
+                amountMinor AS amountMinor,
+                categoryName AS categoryName,
+                COALESCE(merchant, '') AS counterparty,
+                transactionDateEpochDay AS transactionDateEpochDay,
+                methodName AS methodName,
+                note AS note
+            FROM expenses
+        )
+        WHERE (:kind IS NULL OR kind = :kind)
+          AND (:startEpochDay IS NULL OR transactionDateEpochDay >= :startEpochDay)
+          AND (:endEpochDay IS NULL OR transactionDateEpochDay <= :endEpochDay)
+          AND (:category IS NULL OR categoryName = :category)
+        ORDER BY transactionDateEpochDay DESC, id DESC
+        """,
+    )
+    fun observeLedgerFiltered(
+        kind: String?,
+        startEpochDay: Long?,
+        endEpochDay: Long?,
+        category: String?,
+    ): Flow<List<LedgerRow>>
+
+    /** One-shot twin of [observeLedgerFiltered], for CSV/report writers that must not hold a Flow. */
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT
+                id AS id,
+                'income' AS kind,
+                amountMinor AS amountMinor,
+                categoryName AS categoryName,
+                COALESCE(source, '') AS counterparty,
+                transactionDateEpochDay AS transactionDateEpochDay,
+                methodName AS methodName,
+                note AS note
+            FROM incomes
+            UNION ALL
+            SELECT
+                id AS id,
+                'expense' AS kind,
+                amountMinor AS amountMinor,
+                categoryName AS categoryName,
+                COALESCE(merchant, '') AS counterparty,
+                transactionDateEpochDay AS transactionDateEpochDay,
+                methodName AS methodName,
+                note AS note
+            FROM expenses
+        )
+        WHERE (:kind IS NULL OR kind = :kind)
+          AND (:startEpochDay IS NULL OR transactionDateEpochDay >= :startEpochDay)
+          AND (:endEpochDay IS NULL OR transactionDateEpochDay <= :endEpochDay)
+          AND (:category IS NULL OR categoryName = :category)
+        ORDER BY transactionDateEpochDay DESC, id DESC
+        """,
+    )
+    suspend fun ledgerFiltered(
+        kind: String?,
+        startEpochDay: Long?,
+        endEpochDay: Long?,
+        category: String?,
+    ): List<LedgerRow>
+
+
 
     @Query(
         """

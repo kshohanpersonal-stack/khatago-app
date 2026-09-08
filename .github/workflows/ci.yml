@@ -1,0 +1,157 @@
+name: CI
+
+# KhataGo has no runtime services to break, so CI's job is narrow and honest: prove the source is
+# self-consistent, prove the unit and Robolectric suites pass, and prove an APK can actually be
+# assembled and signed by nothing but this repository. Nothing in here publishes anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_VERSION: "8.9"   # must match gradle/wrapper/gradle-wrapper.properties
+  JAVA_VERSION: "17"
+
+jobs:
+  # --------------------------------------------------------------------------- static gates
+  # Cheap, no JDK, no dependency download. These catch the classes of mistake that are invisible
+  # to a formatter and that a review reliably skips past: an import of a name that does not exist,
+  # an unused import (a compile *warning* in this project, so it rots), a DAO call site that
+  # drifted from its query, and an unbalanced brace from a hand-edit.
+  checks:
+    name: Static checks & hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No signing material, keystore, or machine-local config committed
+        run: |
+          set -euo pipefail
+          offenders=$(git ls-files | grep -Ei '\.(jks|keystore|p12|pem)$|(^|/)keystore\.properties$|(^|/)secrets\.properties$|(^|/)local\.properties$' || true)
+          if [ -n "$offenders" ]; then
+            echo "::error::Signing or local secret material must never be committed:"
+            echo "$offenders"
+            exit 1
+          fi
+          # A committed secret needs no clever pattern match: the files above are the only places
+          # a secret could legitimately live, and none of them may be tracked.
+
+      - name: No internet permission, and no networking dependency
+        run: |
+          set -euo pipefail
+          manifest=app/src/main/AndroidManifest.xml
+          if grep -q 'android.permission.INTERNET' "$manifest"; then
+            echo "::error::KhataGo must not request INTERNET — that permission is the privacy claim."; exit 1
+          fi
+          if grep -REni 'okhttp|retrofit|ktor-|firebase|admob|crashlytics|play-services' app/build.gradle.kts build.gradle.kts settings.gradle.kts; then
+            echo "::error::A networking/analytics SDK appeared in the build."; exit 1
+          fi
+          echo "permissions requested:"; grep -o 'android.permission\.[A-Z_]*' "$manifest" | sort -u
+
+      - name: Set up Python for the repository's own checkers
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Static structure / import / symbol / DAO-call-site checks
+        run: |
+          set -euo pipefail
+          python3 tools/check_braces.py app/src
+          python3 tools/audit_imports.py app/src
+          python3 tools/audit_symbols.py
+          python3 tools/audit_data_api.py
+          python3 tools/check_yaml.py .github/workflows
+
+  # --------------------------------------------------------------------------- build + test
+  build:
+    name: Test, lint and assemble
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # The wrapper jar is intentionally not committed (see README: a binary blob nobody can
+      # review does not belong in a repository whose claim is auditability), so the pinned Gradle
+      # distribution is installed here instead. Gradle version pinning is what keeps this job
+      # reproducible either way.
+      - name: Set up Gradle ${{ env.GRADLE_VERSION }}
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Unit tests (JVM + Robolectric)
+        run: gradle --no-daemon :app:testDebugUnitTest --stacktrace
+
+      - name: Android Lint (report only, does not fail the build)
+        if: always()
+        run: gradle --no-daemon :app:lintDebug || true
+
+      - name: Assemble debug APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Assemble release APK (unsigned — signing is configured only in release.yml)
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Formatting
+        run: gradle --no-daemon spotlessCheck
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/build/reports/tests
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-*.html
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload unsigned release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### Build summary"
+            echo
+            echo "- Unit + Robolectric suites ran on Gradle ${GRADLE_VERSION} / JDK ${JAVA_VERSION}"
+            echo "- Debug and release APKs assembled (release unsigned on non-tag builds)"
+            echo "- Room schema export: app/schemas (generated during kapt; commit the diff)"
+          } >> "$GITHUB_STEP_SUMMARY"

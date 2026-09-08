@@ -40,6 +40,18 @@ object AppDates {
 
     fun formatMediumWithWeekday(epochDay: Long): String = mediumWithWeekday.format(ofEpochDay(epochDay))
 
+    /** `9:05 AM` — 12-hour, English, for reminders and schedule copy. */
+    fun clockTime(time: java.time.LocalTime): String {
+        val hour24 = time.hour
+        val minute = time.minute
+        val suffix = if (hour24 < 12) "AM" else "PM"
+        val hour = when (hour24 % 12) {
+            0 -> 12
+            else -> hour24 % 12
+        }
+        return "%d:%02d %s".format(hour, minute, suffix)
+    }
+
     fun formatMonthYear(epochDay: Long): String = shortMonthYear.format(ofEpochDay(epochDay))
 
     fun monthKey(epochDay: Long): String = compactMonthKey.format(ofEpochDay(epochDay))

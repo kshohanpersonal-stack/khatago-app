@@ -63,9 +63,19 @@ import com.khatago.finance.data.db.entity.ShopEntity
         ReminderLogEntity::class,
         AppSettingEntity::class,
     ],
-    version = ROOM_VERSION,
+    version = KHATAGO_DB_VERSION,
     exportSchema = true,
 )
+/**
+ * Database version. `1` is the shipped v1.0.0 schema; see [KhataGoMigrations] for the rules when this
+ * number moves. It is a top-level constant because the `@Database` annotation needs a compile-time
+ * constant, and the About screen prints the same value rather than a hardcoded string.
+ */
+const val KHATAGO_DB_VERSION: Int = 1
+
+/** The file name is stable forever: renaming it would orphan every existing user's ledger. */
+const val KHATAGO_DB_NAME: String = "khatago.db"
+
 abstract class KhataGoDatabase : RoomDatabase() {
 
     abstract fun shopDao(): ShopDao
@@ -92,7 +102,7 @@ abstract class KhataGoDatabase : RoomDatabase() {
     companion object {
 
         fun create(context: Context): KhataGoDatabase =
-            Room.databaseBuilder(context.applicationContext, KhataGoDatabase::class.java, ROOM_DATABASE_NAME)
+            Room.databaseBuilder(context.applicationContext, KhataGoDatabase::class.java, KHATAGO_DB_NAME)
                 .addCallback(SeedCallback())
                 .addMigrations(*KhataGoMigrations.all.toTypedArray())
                 // WAL: KhataGo writes small ledger transactions while reading aggregate flows, and

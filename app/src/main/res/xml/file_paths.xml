@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only two areas are ever shared out, both read-only and both strictly user-initiated:
-     attachments (so the system image viewer can open a receipt the user picked) and the
-     exports directory (so a CSV/backup the user just created can be opened or shared). -->
+<!-- The only area ever shared out: attachments, so the system image viewer can open a receipt the user
+     just tapped. Exports are not here on purpose — a CSV or backup is written straight to wherever the user
+     chose in the system picker (SAF), so there is no app-side copy that a content URI could leak. -->
 <paths>
     <files-path name="attachments" path="attachments/" />
-    <files-path name="exports" path="exports/" />
 </paths>

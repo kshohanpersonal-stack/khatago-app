@@ -152,6 +152,15 @@ class DataRepository(
             }
             graph.incomes.forEach { database.transactionDao().insertIncome(it.copy(id = 0)) }
             graph.expenses.forEach { database.transactionDao().insertExpense(it.copy(id = 0)) }
+            // Recorded in the same transaction: "sample data is loaded" is what lets the UI offer a
+            // clean-up action, and a flag set outside the transaction could survive a failed load.
+            database.catalogDao().putSetting(
+                AppSettingEntity(
+                    key = AppSettingEntity.SAMPLE_DATA_LOADED,
+                    value = "1",
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
         }
         return SampleResult.Loaded(graph.recordCount)
     }

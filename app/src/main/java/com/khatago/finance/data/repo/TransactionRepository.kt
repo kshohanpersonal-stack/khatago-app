@@ -4,7 +4,7 @@ import androidx.room.withTransaction
 import com.khatago.finance.data.db.KhataGoDatabase
 import com.khatago.finance.data.db.entity.ExpenseEntity
 import com.khatago.finance.data.db.entity.IncomeEntity
-import com.khatago.finance.domain.model.LedgerRow2
+import com.khatago.finance.data.db.dao.LedgerRow
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -26,9 +26,17 @@ class TransactionRepository(private val database: KhataGoDatabase) {
         startEpochDay: Long?,
         endEpochDay: Long?,
         category: String?,
-    ): Flow<List<LedgerRow2>> = database.transactionDao()
+    ): Flow<List<LedgerRow>> = database.transactionDao()
         .observeLedgerFiltered(kind, startEpochDay, endEpochDay, category)
         .let { flow -> flow }
+
+    /** One-shot ledger read for the CSV/report writers. */
+    suspend fun ledgerOnce(
+        kind: String?,
+        startEpochDay: Long?,
+        endEpochDay: Long?,
+        category: String? = null,
+    ): List<LedgerRow> = database.transactionDao().ledgerFiltered(kind, startEpochDay, endEpochDay, category)
 
     fun observeMonthIncome(startEpochDay: Long, endEpochDay: Long): Flow<Long> =
         database.transactionDao().observeIncomeBetween(startEpochDay, endEpochDay)

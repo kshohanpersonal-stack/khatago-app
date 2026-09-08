@@ -8,26 +8,12 @@
       and even that is optional: the app is fully functional if the user declines.
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Needed for ACTION_SET_ALARM / ringtone-free scheduling is not used; declared nowhere else. -->
-    <uses-permission
-        android:name="android.permission.RECEIVE_BOOT_COMPLETED"
-        tools:ignore="BatteryLife" />
-
     <uses-feature
         android:name="android.hardware.telephony"
         android:required="false" />
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
-
-    <queries>
-        <!-- Lets the photo picker / alarm-style intents resolve on Android 11+. KhataGo does not
-             enumerate installed apps and never reads the result for anything but an intent check. -->
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:mimeType="image/*" />
-        </intent>
-    </queries>
 
     <application
         android:name=".KhataGoApplication"
@@ -54,21 +40,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!--
-          Re-delivers the daily reminder schedule after a reboot. WorkManager itself also survives
-          reboots; this receiver only re-syncs the periodic job when user preferences changed while
-          the device was off. It performs no network work and shows no UI.
-        -->
-        <receiver
-            android:name=".notify.ReminderBootReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-            </intent-filter>
-        </receiver>
 
         <!-- Tapping "Mark latest as paid" on a reminder notification. -->
         <receiver

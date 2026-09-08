@@ -33,6 +33,35 @@ data class Obligation(
         if (isSettled) DueStatus.NoDueDate else dueStatusOf(dueDateEpochDay, todayEpochDay)
 }
 
+/**
+ * The numbers a payment guard needs, resolved once per write.
+ *
+ * It lives in the domain layer because it contains *no* storage knowledge: it is simply
+ * "original, paid, due, cancelled, and how it is labelled", which is exactly the input the payment
+ * validation rules require. Keeping it here means the repository can build it from Room while the
+ * rules stay testable without Android.
+ */
+data class ObligationSnapshot(
+    val originalMinor: Long,
+    val recordedPaidMinor: Long,
+    val dueDateEpochDay: Long?,
+    val cancelled: Boolean,
+    val title: String,
+    val subtitle: String,
+) {
+    val remainingMinor: Long get() = (originalMinor - recordedPaidMinor).coerceAtLeast(0L)
+
+    /**
+     * Remaining balance *after* a candidate payment, floored at zero.
+     *
+     * The floor is what makes an overpayment impossible to persist: the engine validates against the
+     * true remainder, and this is what the UI shows as "will leave". They are the same function, so a
+     * form can never preview a balance the write will not produce.
+     */
+    fun remainingAfter(paymentMinor: Long): Long =
+        (originalMinor - (recordedPaidMinor + paymentMinor)).coerceAtLeast(0L)
+}
+
 /** A payment as displayed in a ledger list (name of the payer/payee resolved for display). */
 data class PaymentEntry(
     val id: Long,

@@ -218,6 +218,11 @@ class StatsRepository(
     fun observePaymentDays(startEpochDay: Long, endEpochDay: Long) =
         database.paymentDao().observePaymentDays(startEpochDay, endEpochDay)
 
+    /** Month totals as a one-shot pair, for the analytics header and the CSV summary block. */
+    suspend fun monthTotalsOnce(range: LongRange): Pair<Long, Long> =
+        database.transactionDao().incomeBetween(range.first, range.last) to
+            database.transactionDao().expenseBetween(range.first, range.last)
+
     /** Outstanding composition by module — the debt-breakdown chart, from the same queries as the tiles. */
     fun observeOutstandingBreakdown(): Flow<OutstandingBreakdown> = combine(
         database.statsDao().observeShopCreditOutstanding(),

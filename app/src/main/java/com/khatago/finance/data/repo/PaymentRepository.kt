@@ -6,6 +6,7 @@ import com.khatago.finance.data.db.KhataGoDatabase
 import com.khatago.finance.data.db.entity.PaymentEntity
 import com.khatago.finance.domain.calc.PaymentValidation
 import com.khatago.finance.domain.model.DueItem
+import com.khatago.finance.domain.model.ObligationSnapshot
 import com.khatago.finance.domain.model.PayableType
 import com.khatago.finance.domain.model.PaymentEntry
 import com.khatago.finance.domain.model.TransactionKind
@@ -41,6 +42,17 @@ class PaymentRepository(
         observePayments(payableType, payableId).map { rows -> rows.map { it.toEntry() } }
 
     /** Everything recorded against a payable, newest first, for a ledger list. */
+    /**
+     * One-shot obligation snapshot for the payment sheet.
+     *
+     * The payment form needs the obligation *exactly once* (to prefill and to guard), and it must be
+     * the same figures the repository uses inside `record`. Going through [PayableResolver] rather
+     * than re-querying each table means there is one definition of "how much is left" — the number
+     * shown and the number enforced cannot disagree.
+     */
+    suspend fun resolveOnce(payableType: PayableType?, payableId: Long): ObligationSnapshot? =
+        payableType?.let { database.withTransaction { resolver.resolve(it, payableId) } }
+
     suspend fun paymentsFor(payableType: PayableType, payableId: Long): List<PaymentEntity> =
         database.paymentDao().findForPayable(payableType.displayName, payableId)
 
@@ -161,7 +173,17 @@ class PaymentRepository(
      * database after it is gone is an undo that silently loses data.
      */
     suspend fun delete(payment: PaymentEntity) = database.withTransaction {
-        database.paymentDao().delete(payment)
+        // A payment that was applied to an installment line must not leave that line's own `paidMinor`
+        // stale: the line would stay marked paid for money that no longer exists. The replacement value
+        // is recomputed from the surviving ledger, inside the same transaction, so the schedule and the
+        // obligation total can never be observed mid-update.
+        payment.installmentId?.let { installmentId ->
+            val remaining = database.paymentDao().paidAtLine(installmentId) - payment.amountMinor
+            database.paymentDao().deleteAndRepair(
+                payment = payment,
+                newLinePaid = remaining.coerceAtLeast(0L),
+            )
+        } ?: database.paymentDao().delete(payment)
     }
 
     suspend fun restore(payment: PaymentEntity): Long = database.withTransaction {
@@ -193,6 +215,19 @@ class PaymentRepository(
             }
         }
 
+    /**
+     * Outstanding overdue totals, one-shot.
+     *
+     * Exposed as a suspend function (not a Flow) because its two callers — the reminder worker and
+     * the CSV writer — run once and finish, and because the number must come from the *same* SQL the
+     * payment centre's overdue list uses. If a tile ever computed overdue by summing visible rows it
+     * would disagree with the report the moment a list were filtered.
+     */
+    suspend fun overdueTotalsOnce(todayEpochDay: Long): Pair<Int, Long> {
+        val rows = database.dueDao().findOverdueOnce(todayEpochDay)
+        return rows.size to rows.sumOf { it.amountMinor }
+    }
+
     fun observeDueSummary(startEpochDay: Long?, endEpochDay: Long?): Flow<Pair<Int, Long>> =
         database.dueDao().observeSummaryBetween(startEpochDay, endEpochDay).map { it.count to it.totalMinor }
 
@@ -222,6 +257,22 @@ class PaymentRepository(
  * per-module special case that someone forgets to update.
  */
 class PayableResolver(private val database: KhataGoDatabase) {
+
+    /**
+     * One-shot variant for callers outside a transaction (a ViewModel loading a payment form).
+     *
+     * `resolve` must run inside a transaction because `record` writes immediately afterwards and the
+     * guard has to read the same snapshot it enforces. A form only *displays* the numbers, so it must
+     * not hold a write transaction open while the user types — that would block every other writer on
+     * a phone that is only meant to glance at a balance.
+     */
+    suspend fun resolveOnce(payableType: PayableType, payableId: Long): ObligationSnapshot? =
+        database.withTransaction { resolve(payableType, payableId) }
+
+    fun observe(payableType: PayableType, payableId: Long): Flow<ObligationSnapshot> =
+        kotlinx.coroutines.flow.flow {
+            resolveOnce(payableType, payableId)?.let { emit(it) }
+        }
 
     suspend fun resolve(payableType: PayableType, payableId: Long): ObligationSnapshot? = when (payableType) {
         PayableType.ShopCredit -> {
@@ -289,20 +340,6 @@ class PayableResolver(private val database: KhataGoDatabase) {
 }
 
 /** The numbers the payment guard needs, and nothing else. */
-data class ObligationSnapshot(
-    val originalMinor: Long,
-    val recordedPaidMinor: Long,
-    val dueDateEpochDay: Long?,
-    val cancelled: Boolean,
-    val title: String,
-    val subtitle: String,
-) {
-    val remainingMinor: Long get() = (originalMinor - recordedPaidMinor).coerceAtLeast(0L)
-
-    fun remainingAfter(paymentMinor: Long): Long =
-        (originalMinor - (recordedPaidMinor + paymentMinor)).coerceAtLeast(0L)
-}
-
 sealed interface PaymentOutcome {
     data class Recorded(val paymentId: Long, val amountMinor: Long, val remainingAfterMinor: Long) : PaymentOutcome
     data class Rejected(val message: String, val remainingMinor: Long) : PaymentOutcome

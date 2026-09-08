@@ -143,6 +143,27 @@ interface PaymentDao {
     )
     suspend fun allPaymentDays(): List<PaymentDayTotalRow>
 
+    /** Total recorded against one installment line — the only source of a line's own paid figure. */
+    @Query("SELECT COALESCE(SUM(amountMinor), 0) FROM payments WHERE installmentId = :installmentId")
+    suspend fun paidAtLine(installmentId: Long): Long
+
+    /**
+     * Clears the line pointer for one obligation's payments, keeping the payments themselves.
+     *
+     * Called before a schedule is rebuilt (a loan's instalment rows are deleted and regenerated): the
+     * payments stay, still summing to the obligation's paid total, but they stop pointing at installment
+     * ids that no longer exist. Without this, editing a schedule leaves orphaned rows whose
+     * `installmentId` can end up matching *another* record's regenerated line — money attributed to a
+     * instalment that was never the one it paid.
+     */
+    @Query(
+        """
+        UPDATE payments SET installmentId = NULL
+        WHERE payableType = :payableType AND payableId = :payableId AND installmentId IS NOT NULL
+        """,
+    )
+    suspend fun detachFromLines(payableType: String, payableId: Long): Int
+
     /**
      * Removes a payment and, if it was attached to an installment line, clears that line's own
      * paid counter back to what the remaining ledger supports. Kept in one transaction so the

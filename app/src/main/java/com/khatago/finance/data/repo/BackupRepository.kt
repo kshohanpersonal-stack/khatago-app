@@ -63,6 +63,16 @@ class BackupRepository(
     }
 
     /** Serialises the current database state. Exposed for tests and for the "what is in my backup" view. */
+    /**
+     * Counts per table, parsed from [com.khatago.finance.data.db.dao.StatsDao.recordCounts].
+     *
+     * Exposed as a typed value rather than the raw string because two screens show it (backup and
+     * About), and a UI that splits a string on '/' in two places is two places that break when the
+     * order of the SQL columns changes.
+     */
+    suspend fun statsSnapshot(): BackupStats =
+        BackupStats.from(database.statsDao().recordCounts())
+
     suspend fun buildDocument(): BackupDocument {
         val catalog = database.catalogDao()
         return BackupDocument(
@@ -568,4 +578,72 @@ data class RestoreReport(
                 "Restored $recordsAdded records; $droppedRecords could not be linked and were skipped."
             else -> "Restored $recordsAdded records."
         }
+}
+
+/** Per-table record counts, in the exact order `StatsDao.recordCounts()` concatenates them. */
+data class BackupStats(
+    val shops: Int = 0,
+    val credits: Int = 0,
+    val people: Int = 0,
+    val borrowings: Int = 0,
+    val lendings: Int = 0,
+    val loans: Int = 0,
+    val emis: Int = 0,
+    val installments: Int = 0,
+    val payments: Int = 0,
+    val incomes: Int = 0,
+    val expenses: Int = 0,
+    val attachments: Int = 0,
+    val reminders: Int = 0,
+) {
+    val total: Int
+        get() = shops + credits + people + borrowings + lendings + loans + emis + installments +
+            payments + incomes + expenses
+
+    val isEmpty: Boolean get() = total == 0
+
+    /** Labelled rows for the UI; order mirrors the SQL so a reader can verify it against the query. */
+    fun rows(): List<Pair<String, String>> = buildList {
+        add("Shops" to shops.toString())
+        add("Shop credit records" to credits.toString())
+        add("People" to people.toString())
+        add("Borrowings" to borrowings.toString())
+        add("Lendings" to lendings.toString())
+        add("Loans" to loans.toString())
+        add("EMI plans" to emis.toString())
+        add("Installment lines" to installments.toString())
+        add("Payments" to payments.toString())
+        add("Income entries" to incomes.toString())
+        add("Expense entries" to expenses.toString())
+        add("Attachments" to attachments.toString())
+        add("Reminders" to reminders.toString())
+        add("Total (excluding attachments and reminders)" to total.toString())
+    }
+
+    companion object {
+        val ORDER = listOf(
+            "shops", "shop_credits", "people", "borrowings", "lendings", "loans", "emi_purchases",
+            "installments", "payments", "incomes", "expenses", "attachments", "reminders",
+        )
+
+        fun from(raw: String): BackupStats {
+            val parts = raw.split('/').map { it.trim().toIntOrNull() ?: 0 }
+            fun at(index: Int): Int = parts.getOrElse(index) { 0 }
+            return BackupStats(
+                shops = at(0),
+                credits = at(1),
+                people = at(2),
+                borrowings = at(3),
+                lendings = at(4),
+                loans = at(5),
+                emis = at(6),
+                installments = at(7),
+                payments = at(8),
+                incomes = at(9),
+                expenses = at(10),
+                attachments = at(11),
+                reminders = at(12),
+            )
+        }
+    }
 }

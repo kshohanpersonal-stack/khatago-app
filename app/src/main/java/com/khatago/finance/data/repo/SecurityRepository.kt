@@ -69,13 +69,63 @@ class SecurityRepository(context: Context) {
     /** The PIN is required again whenever the app leaves the foreground, if a lock exists. */
     fun onBackground() = lockNow()
 
-    fun setPinSync(pin: String): PinResult = setPin(pin).let { it }
+    // --- failed-attempt throttling -------------------------------------------
+    //
+    // A 4-digit PIN is 10,000 guesses. Without a cool-down, a person holding an unlocked-for-
+    // a-moment phone can brute force it in minutes; with it, the cost of guessing rises to hours
+    // while the legitimate user pays nothing. The counter is *deliberately* not in the Room
+    // database: it must survive "delete all data" (so a wipe cannot reset a lockout) yet never be
+    // part of a backup (so a lockout cannot be imported onto another device).
+
+    /** Attempts remaining before the next cool-down starts. */
+    val remainingAttempts: Int
+        get() = (MAX_ATTEMPTS - failureCount()).coerceAtLeast(0)
+
+    fun failureCount(): Int = prefs.getInt(FAILURES, 0)
+
+    /** Whole minutes still to wait before another attempt is allowed (0 when not locked out). */
+    fun remainingLockoutMinutes(now: Long = System.currentTimeMillis()): Int {
+        val until = prefs.getLong(LOCKED_UNTIL, 0L)
+        if (until <= now) return 0
+        return (((until - now) + 59_999L) / 60_000L).toInt()
+    }
+
+    /**
+     * Records a wrong PIN. Returns the running failure count so the UI can say "attempt 3 of 5"
+     * rather than inventing its own counter that could drift from the real one.
+     */
+    fun registerFailure(now: Long = System.currentTimeMillis()): Int {
+        val count = failureCount() + 1
+        prefs.edit().apply {
+            putInt(FAILURES, count)
+            if (count >= MAX_ATTEMPTS) {
+                putLong(LOCKED_UNTIL, now + LOCKOUT_MILLIS)
+                putInt(FAILURES, 0)
+            }
+        }.apply()
+        return if (count >= MAX_ATTEMPTS) MAX_ATTEMPTS else count
+    }
+
+    fun clearFailures() {
+        prefs.edit().remove(FAILURES).remove(LOCKED_UNTIL).apply()
+    }
+
+    /** True while attempts are blocked. Checked by the keypad, not by the caller's patience. */
+    fun isLockedOut(now: Long = System.currentTimeMillis()): Boolean =
+        prefs.getLong(LOCKED_UNTIL, 0L) > now
+
 
     private companion object {
         const val FILE = "khatago_security"
         const val PIN_HASH = "pin_hash"
         const val BIOMETRIC = "biometric_enabled"
         const val SET_AT = "pin_set_at"
+        const val FAILURES = "pin_failures"
+        const val LOCKED_UNTIL = "locked_until"
+
+        /** Tuned so a legitimate "I forgot, let me try three times" is never punished. */
+        const val MAX_ATTEMPTS = 5
+        const val LOCKOUT_MILLIS = 5L * 60L * 1000L
     }
 }
 

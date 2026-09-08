@@ -2,6 +2,7 @@ package com.khatago.finance.data.repo
 
 import androidx.room.withTransaction
 import com.khatago.finance.core.time.Frequency
+import com.khatago.finance.core.time.ScheduleEntry
 import com.khatago.finance.core.time.InstallmentSchedule
 import com.khatago.finance.data.db.KhataGoDatabase
 import com.khatago.finance.data.db.entity.EmiPurchaseEntity
@@ -164,10 +165,17 @@ class ObligationRepository(private val database: KhataGoDatabase) {
     // --- schedules ------------------------------------------------------------
 
     /**
-     * Rebuilds the schedule while preserving manually edited lines.
+     * Rebuilds the schedule while preserving manually edited lines *and* per-line paid amounts.
      *
-     * Returns how many lines were kept by hand so the form can say so. A generated line is cheap to
-     * recreate; a line the user typed a date into is not.
+     * Two invariants, both about not losing money's history when a plan is edited:
+     *  - a line the user dated by hand is kept as-is; regenerating it would silently move a due date
+     *    the person negotiated with a lender;
+     *  - `paidMinor` on a generated line is carried over by instalment number, because payments
+     *    already recorded against line 3 must still show on line 3 after the schedule is rebuilt.
+     *
+     * Payments are detached from their line ids first: the rows are deleted here, so a payment left
+     * pointing at a deleted id would later match a *regenerated* line by coincidence of id. The
+     * payments themselves are never touched — the obligation's paid total is the payments table.
      */
     private suspend fun syncSchedule(
         ownerType: String,
@@ -184,6 +192,7 @@ class ObligationRepository(private val database: KhataGoDatabase) {
             else -> database.emiDao().findInstallments(ownerId)
         }
         val manualLines = existing.filter { it.manual }
+        val paidByNumber = existing.filter { it.paidMinor > 0L }.associate { it.number to it.paidMinor }
         val generated = InstallmentSchedule.generate(
             firstDueDateEpochDay = firstDueDateEpochDay.takeIf { it > 0L },
             count = count,
@@ -200,7 +209,7 @@ class ObligationRepository(private val database: KhataGoDatabase) {
                 number = entry.number,
                 dueDateEpochDay = entry.dueDateEpochDay,
                 scheduledAmountMinor = entry.amountMinor,
-                paidMinor = 0L,
+                paidMinor = paidByNumber[entry.number] ?: 0L,
                 manual = false,
                 createdAt = now,
             )
@@ -208,11 +217,13 @@ class ObligationRepository(private val database: KhataGoDatabase) {
 
         when (ownerType) {
             PayableType.Loan.displayName -> {
+                database.paymentDao().detachFromLines(ownerType, ownerId)
                 database.loanDao().clearSchedule(ownerId)
                 if (rows.isNotEmpty()) database.loanDao().insertInstallments(rows)
             }
 
             else -> {
+                database.paymentDao().detachFromLines(ownerType, ownerId)
                 database.emiDao().clearSchedule(ownerId)
                 if (rows.isNotEmpty()) database.emiDao().insertInstallments(rows)
             }
@@ -228,14 +239,14 @@ class ObligationRepository(private val database: KhataGoDatabase) {
         customIntervalDays: Int,
         installmentMinor: Long,
         totalPayableMinor: Long?,
-    ): List<Pair<Int, Long>> = InstallmentSchedule.generate(
+    ): List<ScheduleEntry> = InstallmentSchedule.generate(
         firstDueDateEpochDay = firstDueDateEpochDay,
         count = count,
         frequency = frequency,
         customIntervalDays = customIntervalDays,
         installmentMinor = installmentMinor.takeIf { it > 0L },
         totalPayableMinor = totalPayableMinor?.takeIf { it > 0L },
-    ).map { it.number to it.amountMinor }
+    )
 
     /** The rendered schedule for a loan or EMI: allocations come from the obligation's paid total. */
     suspend fun scheduleProgress(

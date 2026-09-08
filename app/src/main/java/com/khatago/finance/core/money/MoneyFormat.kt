@@ -33,12 +33,14 @@ object MoneyFormat {
 
         val grouped = groupThousands(integerPart, currency.grouping)
         val digits = if (fractionPart.isEmpty()) grouped else "$grouped${currency.decimalMark}$fractionPart"
-        val signed = if (negative) "-$digits" else digits
-
+        // The sign goes outside the symbol ("-৳5.00", never "৳-5.00"): that is how a negative amount is
+        // written on a paper khata, and inside the digits it reads as part of the number.
         val symbol = currency.symbol
         return when {
-            currency.symbolBefore -> "$symbol$signed"
-            else -> "$signed $symbol"
+            currency.symbolBefore && negative -> "-$symbol$digits"
+            currency.symbolBefore -> "$symbol$digits"
+            negative -> "-$digits $symbol"
+            else -> "$digits $symbol"
         }
     }
 

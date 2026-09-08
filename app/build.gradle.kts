@@ -184,7 +184,13 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    // Icons Extended, not just the core set: KhataGo's module tiles, due-status affordances and
+    // detail actions use ~35 glyphs (Wallet, Inventory, ReceiptLong, Verified, TrendingUp, …) that
+    // material-icons-core does not ship. Version comes from the Compose BOM. R8 strips the unused
+    // remainder, so this costs build time and nothing at runtime.
     implementation("androidx.compose.material:material-icons-core")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.animation:animation")
 
     // --- navigation ------------------------------------------------------------
@@ -194,7 +200,11 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    // NOTE: no DataStore. KhataGo's settings that a *query* needs (widget visibility, reminders,
+    // sample-data flag) live in the Room `app_settings` table so they participate in the same
+    // transaction and the same backup as the ledger; the security store is a private
+    // SharedPreferences file that must NOT be in a backup. A third key-value store would be a third
+    // place for state to disagree.
 
     // --- background work + local notifications ---------------------------------
     implementation("androidx.work:work-runtime-ktx:2.9.1")

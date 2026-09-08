@@ -127,7 +127,6 @@ object BackupTime {
     }
 }
 
-}
 
 /**
  * `@Transient` on every primary key is what makes an import safe (ids are reassigned and foreign

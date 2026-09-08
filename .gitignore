@@ -15,5 +15,8 @@ captures/
 *.pem
 keystore.properties
 secrets.properties
+# Python scratch from the static checkers in tools/
+__pycache__/
+*.pyc
 # Local, non-production demo scratch
 /scratch/

@@ -1,6 +1,7 @@
 package com.khatago.finance.data.backup
 
 import com.khatago.finance.data.db.entity.PaymentEntity
+import com.khatago.finance.domain.model.PayableType
 
 /**
  * Pure validation of an untrusted backup document, before a single row is written.
@@ -158,9 +159,11 @@ object BackupValidation {
                 "lending" to validLendings.map { it.id }.toSet(),
             )
             val validPayments = document.payments.filter { payment ->
-                val ids = obligationIds[payment.payableType] ?: return@filter false
-                payment.payableId in ids &&
-                    (payment.installmentId == null || payment.installmentId in installmentIds)
+                // One predicate, also used by the "more paid than owed" pass below: a payment is only
+                // importable when its obligation survived the link checks *and* its installment line,
+                // if it names one, survived too. Duplicating that rule here is how a payment ends up
+                // restored against an obligation that is not in the file.
+                paymentBelongs(payment, document, obligationIds, installmentIds)
             }
 
             dropped = (document.shopCredits.size - validCredits.size) +
@@ -245,14 +248,24 @@ object BackupValidation {
         )
     }
 
-    private fun paymentBelongs(payment: PaymentEntity, document: BackupDocument): Boolean = when (payment.payableType) {
-        "shop_credit" -> document.shopCredits.any { it.id == payment.payableId }
-        "loan" -> document.loans.any { it.id == payment.payableId }
-        "emi" -> document.emiPurchases.any { it.id == payment.payableId }
-        "borrowing" -> document.borrowings.any { it.id == payment.payableId }
-        "lending" -> document.lendings.any { it.id == payment.payableId }
-        else -> false
-    } && (payment.installmentId == null || document.installments.any { it.id == payment.installmentId })
+    /**
+     * Whether a payment row points at a record that actually exists in this file.
+     *
+     * [survivingObligationIds] is the *post-link-check* id set (a credit whose shop is missing has already
+     * been dropped), which is why the caller passes it in rather than letting this read
+     * `document.shopCredits` — a payment must not survive by pointing at a record that was dropped for
+     * dangling elsewhere, or the restored ledger would hold money with no obligation under it.
+     */
+    private fun paymentBelongs(
+        payment: PaymentEntity,
+        document: BackupDocument,
+        survivingObligationIds: Map<String, Set<Long>>,
+        survivingInstallmentIds: Set<Long> = document.installments.map { it.id }.toSet(),
+    ): Boolean {
+        val key = PayableType.fromKey(payment.payableType)?.displayName ?: return false
+        if (payment.payableId !in (survivingObligationIds[key] ?: emptySet())) return false
+        return payment.installmentId == null || payment.installmentId in survivingInstallmentIds
+    }
 
     private fun originalFor(document: BackupDocument, key: Pair<String, Long>): Long = when (key.first) {
         "shop_credit" -> document.shopCredits.firstOrNull { it.id == key.second }?.totalAmountMinor
