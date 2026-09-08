@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      KhataGo is a LIGHT-ONLY application. Two independent mechanisms guarantee that, and
+      MainActivity additionally calls AppCompatDelegate.setDefaultNightMode(MODE_NIGHT_NO):
+        1. values-night/theme.xml forces a light DayNight variant even when the OS is dark.
+        2. android:forceDarkAllowed=false stops the OEM/WebView dark-inversion pass.
+    -->
+    <style name="Theme.KhataGo" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/khatago_white</item>
+        <item name="android:navigationBarColor">@color/khatago_white</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">@color/khatago_white</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+
+    <!-- Cold-start splash: system draws the logo on our mint surface before Compose exists. -->
+    <style name="Theme.KhataGo.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/khatago_mint_surface</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_khatago_splash</item>
+        <item name="windowSplashScreenAnimationDuration">350</item>
+        <item name="postSplashScreenTheme">@style/Theme.KhataGo</item>
+    </style>
+</resources>

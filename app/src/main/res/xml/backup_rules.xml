@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KhataGo keeps every byte of user data in the app's private storage and in the Room database.
+  Automatic Android backup is disabled on purpose: a user's financial ledger must not silently
+  leave the device through a transport the user never configured or reviewed.
+  Backups are explicit, user-initiated, local JSON files (see Settings → Backup).
+-->
+<full-backup-content>
+    <exclude domain="database" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="root" path="." />
+</full-backup-content>

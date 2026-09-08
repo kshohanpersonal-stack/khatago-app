@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The device is in dark mode. KhataGo still must not be. There is deliberately no night
+  palette: this file exists only to pin a light parent + light chrome so that framework
+  dialogs, the status bar and any non-Compose surface stay light.
+-->
+<resources>
+    <style name="Theme.KhataGo" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/khatago_white</item>
+        <item name="android:navigationBarColor">@color/khatago_white</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">@color/khatago_white</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>

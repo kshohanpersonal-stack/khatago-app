@@ -1,0 +1,19 @@
+# Built outputs
+*.iml
+.gradle/
+build/
+local.properties
+.idea/
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+# Never commit signing material or machine-local secrets
+*.jks
+*.keystore
+*.p12
+*.pem
+keystore.properties
+secrets.properties
+# Local, non-production demo scratch
+/scratch/

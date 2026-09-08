@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand surfaces used by system chrome (splash, status bar, nav bar). -->
+    <color name="khatago_mint_surface">#FFE9FAF1</color>
+    <color name="khatago_emerald_deep">#FF0B5F45</color>
+    <color name="khatago_white">#FFFFFFFF</color>
+</resources>

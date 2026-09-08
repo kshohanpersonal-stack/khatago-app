@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KhataGo</string>
+    <string name="app_tagline">Your Money. Your Records. Your Control.</string>
+    <string name="app_creator">Created by Shohan Khan</string>
+    <string name="app_contact">helloiamshohan@gmail.com</string>
+
+    <!--
+      Pin the app to a light uiMode even when the whole device is in dark mode.
+      KhataGo has no dark theme by design (product requirement), so the configuration
+      itself is overridden rather than merely the colors.
+    -->
+    <bool name="khatago_force_light_ui_mode">true</bool>
+
+    <!-- Notification channel shown to the user in system settings -->
+    <string name="notification_channel_name">Payment reminders</string>
+    <string name="notification_channel_description">Local reminders for installments, EMIs and other obligations that are due soon or overdue. Nothing leaves your device.</string>
+
+    <string name="fileprovider_authority" translatable="false">com.khatago.finance.fileprovider</string>
+</resources>

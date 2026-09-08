@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only two areas are ever shared out, both read-only and both strictly user-initiated:
+     attachments (so the system image viewer can open a receipt the user picked) and the
+     exports directory (so a CSV/backup the user just created can be opened or shared). -->
+<paths>
+    <files-path name="attachments" path="attachments/" />
+    <files-path name="exports" path="exports/" />
+</paths>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  KhataGo adaptive launcher icon.
+  background  : brand mint surface (fills behind the masked shape on every OEM launcher)
+  foreground  : the ledger-K mark, authored so the artwork sits inside the 66dp safe zone
+  monochrome  : solid silhouette used by Android 13+ themed icon masks
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/khatago_mint_surface" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>
