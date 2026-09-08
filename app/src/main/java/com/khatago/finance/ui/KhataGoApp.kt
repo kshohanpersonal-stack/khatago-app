@@ -20,21 +20,19 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.khatago.finance.AppContainer
 import com.khatago.finance.ui.analytics.AnalyticsRoute
+import com.khatago.finance.ui.analytics.InsightsRoute
 import com.khatago.finance.ui.components.EmptyState
 import com.khatago.finance.ui.detail.AboutRoute
 import com.khatago.finance.ui.detail.BackupRestoreRoute
 import com.khatago.finance.ui.detail.CreditDetailRoute
 import com.khatago.finance.ui.detail.DataManagementRoute
 import com.khatago.finance.ui.detail.EmiDetailRoute
-import com.khatago.finance.ui.detail.InsightsRoute
 import com.khatago.finance.ui.detail.LedgerDetailRoute
 import com.khatago.finance.ui.detail.LoanDetailRoute
-import com.khatago.finance.ui.detail.MoreRoute
 import com.khatago.finance.ui.detail.ObligationDetailRoute
 import com.khatago.finance.ui.detail.OnboardingRoute
 import com.khatago.finance.ui.detail.PaymentSheetRoute
 import com.khatago.finance.ui.detail.PersonDetailRoute
-import com.khatago.finance.ui.detail.QuickAddRoute
 import com.khatago.finance.ui.detail.ReportsRoute
 import com.khatago.finance.ui.detail.SearchRoute
 import com.khatago.finance.ui.detail.SecurityRoute
@@ -48,6 +46,7 @@ import com.khatago.finance.ui.forms.ShopFormRoute
 import com.khatago.finance.ui.forms.TransactionFormRoute
 import com.khatago.finance.ui.home.DashboardRoute
 import com.khatago.finance.ui.more.MoreRoute
+import com.khatago.finance.ui.more.QuickAddRoute
 import com.khatago.finance.ui.payments.PaymentCenterRoute
 import com.khatago.finance.ui.records.RecordsRoute
 

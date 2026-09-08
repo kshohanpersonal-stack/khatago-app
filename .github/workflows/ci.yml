@@ -127,7 +127,19 @@ jobs:
         run: |
           set -uo pipefail
           d=$GITHUB_WORKSPACE/.diag
+          # Written inside the workspace, not /tmp: three rounds in a row published a report whose
+          # progress marker proved that files written by an earlier step were not visible to the next
+          # one, so nothing about the probes survived. This step now does everything itself, and it
+          # still reports which command did not run.
           mkdir -p "$d"
+          {
+            echo "# KhataGo compile diagnostics for run $GITHUB_RUN_ID"
+            echo
+            echo '```'
+            echo "step started; gradle=$(command -v gradle || echo MISSING) java=$(java -version 2>&1 | head -1)"
+            echo "workspace: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD 2>/dev/null)"
+            echo '```'
+          } > "$d/report.md"
           cat > "$d/no-kapt.init.gradle.kts" <<'INITEOF'
           gradle.beforeProject {
               tasks.matching { it.name.startsWith("kapt") }.configureEach { enabled = false }
@@ -157,11 +169,8 @@ jobs:
             } >> "$d/report.md"
             echo "probe$n exit=$rc lines=$lines diagnostics=$diag"
           }
-          : > "$d/report.md"
           {
-            echo "# KhataGo compile diagnostics for run $GITHUB_RUN_ID"
-            echo
-            echo "Commit: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD) · job: $GITHUB_JOB · step ran as one shell."
+            echo "Commit: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD) · job: $GITHUB_JOB · one step, one shell."
             echo
             echo "The build job's own message is always one line: \`e: Could not load module <Error module>\`."
             echo "That is emitted when something resolves to an *error descriptor* - a reference to a type or"

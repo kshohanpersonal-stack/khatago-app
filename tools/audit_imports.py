@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """Import-level audit for KhataGo (no compiler available in this environment).
 
-Catches the two import defects a `check_braces` pass cannot see:
+Catches the four import defects a `check_braces` pass cannot see:
   1. `import com.khatago.finance.X.Y` where Y is not a top-level declaration of X/Y.kt nor a member of
      a file in that package — the classic "wrote the call site before reading the declaration" bug
      (a bare `import ObligationSnapshot` and `import androidx.compose.runtime.ViewModel` both landed
      here during development).
   2. An import that no line of the file references (unused imports are warnings under Kotlin, but they
      also mean a name was renamed on one side only).
+  3. An import of a name that *does* exist but in a different package — `import
+     com.khatago.finance.ui.detail.MoreRoute` when the composable lives in `ui.more`. This is the
+     defect that cost the most CI rounds here: it is an unresolved reference, which kapt reports only as
+     `e: Could not load module <Error module>`, with no file and no line.
+  4. The same import written twice (a re-shuffled import block leaves both the old and the new line).
 
 Usage:  python3 tools/audit_imports.py [path ...]     (defaults to app/src)
 """
@@ -58,6 +63,10 @@ def collect() -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     """
     by_file: dict[str, set[str]] = {}
     by_package: dict[str, set[str]] = {}
+    # Every own-package top-level name, keyed by the package that actually declares it. Used as the
+    # "does this name exist at all?" oracle for defect 3 — a name that exists elsewhere is a wrong
+    # import, not a missing declaration, and has to be reported as such.
+    everywhere: dict[str, set[str]] = {}
     for f in sorted(SRC.rglob('*.kt')):
         text = f.read_text(encoding='utf-8')
         pkg = re.search(r'^package\s+([\w.]+)', text, re.M)
@@ -75,17 +84,21 @@ def collect() -> tuple[dict[str, set[str]], dict[str, set[str]]]:
         )
         by_file.setdefault(package + '.' + f.stem, set()).update(names)
         by_package.setdefault(package, set()).update(names)
+        everywhere.setdefault(package, set()).update(
+            set(TOP_LEVEL.findall(text)) | set(FUN_OR_VAL.findall(text))
+        )
         parts = package.split('.')
         for i in range(3, len(parts) + 1):
             by_package.setdefault('.'.join(parts[:i]), set())
-    return by_file, by_package
+    return by_file, by_package, everywhere
 
 
 def main(argv: list[str]) -> int:
-    by_file, by_package = collect()
+    by_file, by_package, everywhere = collect()
     targets = [Path(a).resolve() for a in argv[1:]] or [SRC]
     problems: list[str] = []
     checked = 0
+    seen: set[tuple[str, str]] = set()
 
     for base in targets:
         files = [base] if base.is_file() else sorted(base.rglob('*.kt'))
@@ -103,7 +116,20 @@ def main(argv: list[str]) -> int:
                 parent, _, last = fqn.rpartition('.')
                 if last in ALLOWED_UNKNOWN:
                     continue
+                key = (str(f), fqn)
+                if key in seen:
+                    problems.append(f'{f.relative_to(ROOT)}: import {fqn} appears twice in this file')
+                else:
+                    seen.add(key)
                 known = by_package.get(parent, set()) | by_file.get(fqn, set())
+                if known and last not in by_package.get(parent, set()):
+                    homes = [pkg for pkg, names in everywhere.items() if last in names]
+                    if homes:
+                        problems.append(
+                            f'{f.relative_to(ROOT)}: import {fqn} — {last} is declared in '
+                            f'{", ".join(sorted(homes))}, not in {parent}'
+                        )
+                        continue
                 if fqn not in by_file and last not in by_package.get(parent, set()) and not known:
                     problems.append(
                         f'{f.relative_to(ROOT)}: import {fqn} — no file or top-level name in '
