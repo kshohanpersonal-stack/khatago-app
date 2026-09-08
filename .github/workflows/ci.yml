@@ -170,9 +170,9 @@ jobs:
               "$GITHUB_WORKSPACE/app/build/tmp"/*.log 2>/dev/null | head -40
             echo '```'
           } > "$diag"
-          gh api -X POST "repos/$GITHUB_REPOSITORY/issues" \
-            -f title="CI: unit-test failure diagnostics ($(git rev-parse --short HEAD))" \
-            -F body="@$diag" -f labels="bug" >/dev/null || echo "::warning::could not file the diagnostics issue"
+          jq -Rs --arg t "CI: build diagnostics at $(git rev-parse --short HEAD)" '{title: $t, body: .}' < "$diag" |
+            gh api -X POST --input - "repos/$GITHUB_REPOSITORY/issues" >/dev/null 2>&1 ||
+            echo "::warning::could not file the diagnostics issue (workflow permissions?)"
           echo "Tests failed; see the annotations on this check run."
 
       - name: Android Lint (report only, does not fail the build)
