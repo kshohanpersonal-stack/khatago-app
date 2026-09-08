@@ -1,6 +1,8 @@
 package com.khatago.finance.data.db
 
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.khatago.finance.data.db.entity.AppSettingEntity
+import com.khatago.finance.data.db.entity.CategoryEntity
 
 /**
  * Reference data inserted once, when the database file is first created.
@@ -17,6 +19,23 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  */
 internal object KhataGoSeed {
 
+    /**
+     * The built-in catalogue, in insertion order. Public because a restore that imported a file with
+     * no categories must re-seed *exactly* these names — a second copy of the list would drift.
+     */
+    val INCOME_CATEGORIES = listOf(
+        "Salary", "Business", "Freelance", "Bonus", "Commission", "Gift", "Investment", "Other",
+    )
+
+    val EXPENSE_CATEGORIES = listOf(
+        "Food", "Transport", "Shopping", "Bills", "Rent", "Utilities", "Education", "Health",
+        "Family", "Entertainment", "Business", "Loan Payment", "EMI Payment", "Other",
+    )
+
+    // Cash first: it is the overwhelmingly common path in a khata workflow, and the payment sheet
+    // prefills the first enabled row.
+    val PAYMENT_METHODS = listOf("Cash", "Bank transfer", "Mobile banking", "Card", "Other")
+
     fun onCreate(db: SupportSQLiteDatabase) {
         seedCategories(db)
         seedPaymentMethods(db)
@@ -25,22 +44,15 @@ internal object KhataGoSeed {
 
     private fun seedCategories(db: SupportSQLiteDatabase) {
         var order = 0
-        listOf(
-            CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = "Salary", orderIndex = order++),
-            CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = "Business", orderIndex = order++),
-            CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = "Freelance", orderIndex = order++),
-            CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = "Bonus", orderIndex = order++),
-            CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = "Commission", orderIndex = order++),
-            CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = "Gift", orderIndex = order++),
-            CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = "Investment", orderIndex = order++),
-            CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = "Other", orderIndex = order++),
-        ).forEach { insertCategory(db, it) }
+        INCOME_CATEGORIES.forEach { name ->
+            insertCategory(
+                db,
+                CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = name, orderIndex = order++),
+            )
+        }
 
         order = 0
-        listOf(
-            "Food", "Transport", "Shopping", "Bills", "Rent", "Utilities", "Education", "Health",
-            "Family", "Entertainment", "Business", "Loan Payment", "EMI Payment", "Other",
-        ).forEach { name ->
+        EXPENSE_CATEGORIES.forEach { name ->
             insertCategory(
                 db,
                 CategoryEntity(kind = CategoryEntity.KIND_EXPENSE, name = name, orderIndex = order++),
@@ -59,9 +71,7 @@ internal object KhataGoSeed {
     }
 
     private fun seedPaymentMethods(db: SupportSQLiteDatabase) {
-        // Cash first: it is the overwhelmingly common path in a khata workflow, and the payment sheet
-        // prefills the first enabled row.
-        listOf("Cash", "Bank transfer", "Mobile banking", "Card", "Other").forEachIndexed { index, name ->
+        PAYMENT_METHODS.forEachIndexed { index, name ->
             db.execSQL(
                 """
                 INSERT OR IGNORE INTO payment_methods(name, orderIndex, builtIn, enabled)

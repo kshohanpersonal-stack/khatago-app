@@ -7,6 +7,7 @@ import com.khatago.finance.core.money.CurrencySpec
 import com.khatago.finance.core.money.MoneyFormat
 import com.khatago.finance.core.time.AppDates
 import com.khatago.finance.data.db.entity.AttachmentEntity
+import com.khatago.finance.data.db.entity.PaymentEntity
 import com.khatago.finance.data.repo.SaveResult
 import com.khatago.finance.data.repo.isSaved
 import com.khatago.finance.domain.model.InstallmentView
@@ -16,6 +17,7 @@ import com.khatago.finance.domain.model.PayableType
 import com.khatago.finance.domain.model.PaymentEntry
 import com.khatago.finance.domain.model.ScheduleProgress
 import com.khatago.finance.ui.components.StatusTone
+import com.khatago.finance.ui.components.payableFromKey
 import com.khatago.finance.ui.components.toneForLedger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -123,8 +125,6 @@ class DetailViewModel(
                 statusLabel = if ((row?.overdueMinor ?: 0L) > 0L) "Overdue present" else "Active",
                 statusTone = if ((row?.overdueMinor ?: 0L) > 0L) StatusTone.Overdue else StatusTone.Active,
                 meta = listOfNotNull(
-                    row?.category?.let { MetaRow("Category", it) },
-                    row?.address?.let { MetaRow("Address", it) },
                     MetaRow("Credit records", "${row?.creditCount ?: 0}"),
                     MetaRow("Still open", "${row?.activeCount ?: 0}"),
                     MetaRow("Last purchase", AppDates.formatMedium(row?.lastCreditDateEpochDay)),
@@ -182,7 +182,7 @@ class DetailViewModel(
             }
 
         "loan", "emi" -> combine(
-            container.paymentRepository.observeObligation(typeKey, id),
+            container.paymentRepository.observeObligation(payableFromKey(typeKey), id),
             container.obligationRepository.observeScheduleProgress(
                 ownerType = if (typeKey == "loan") PayableType.Loan else PayableType.Emi,
                 ownerId = id,
@@ -222,9 +222,9 @@ class DetailViewModel(
         }
 
         "borrowing", "lending" -> combine(
-            container.paymentRepository.observeObligation(typeKey, id),
+            container.paymentRepository.observeObligation(payableFromKey(typeKey), id),
             container.paymentRepository.observePaymentEntries(
-                payableType = payable ?: PayableType.Borrowing,
+                payableType = payableFromKey(typeKey) ?: PayableType.Borrowing,
                 payableId = id,
             ),
         ) { snapshot, entries ->
@@ -287,7 +287,7 @@ class DetailViewModel(
                 remainingMinor = 0,
                 dueDateEpochDay = null,
                 statusLabel = "Missing",
-                statusTone = StatusTone.Info(),
+                statusTone = StatusTone.Info,
                 meta = emptyList(),
                 note = "It may have been deleted on another screen. Nothing was changed here.",
                 schedule = emptyList(),
@@ -322,7 +322,7 @@ class DetailViewModel(
     }
 
     private fun statusFor(snapshot: ObligationSnapshot?): Pair<String, StatusTone> {
-        if (snapshot == null) return "Missing" to StatusTone.Info()
+        if (snapshot == null) return "Missing" to StatusTone.Info
         return statusPair(
             total = snapshot.originalMinor,
             paid = snapshot.recordedPaidMinor,

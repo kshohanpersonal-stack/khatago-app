@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,7 +34,7 @@ import com.khatago.finance.ui.components.DetailTopBar
 import com.khatago.finance.ui.components.EmptyState
 import com.khatago.finance.ui.components.KhataGoCard
 import com.khatago.finance.ui.components.KhataGoIcons
-import com.khatago.finance.ui.components.moneyText
+import com.khatago.finance.core.money.MoneyFormat
 import com.khatago.finance.ui.components.toneForLedger
 import com.khatago.finance.ui.theme.KhataGoColors
 import com.khatago.finance.ui.theme.KhataGoRadii
@@ -63,8 +64,10 @@ fun InsightsRoute(container: AppContainer, onBack: () -> Unit) {
         val spec = CurrencySpec.fromCode(profile?.currencyCode)
         val today = com.khatago.finance.core.time.AppDates.today()
         currency = spec
-        snapshot = container.statsRepository.snapshot(today) { minor -> moneyText(minor, spec) }
-        insights = container.statsRepository.insights(today) { minor -> moneyText(minor, spec) }
+        // `moneyText` is @Composable and this lambda runs in a coroutine, not in composition —
+        // so the plain core formatter is used here, which is the exact function moneyText forwards to.
+        snapshot = container.statsRepository.snapshot(today) { minor -> MoneyFormat.format(minor, spec) }
+        insights = container.statsRepository.insights(today) { minor -> MoneyFormat.format(minor, spec) }
         loaded = true
     }
 

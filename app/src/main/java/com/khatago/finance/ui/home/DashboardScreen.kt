@@ -37,8 +37,8 @@ import com.khatago.finance.domain.model.ActivityItem
 import com.khatago.finance.domain.model.DashboardSnapshot
 import com.khatago.finance.domain.model.DueItem
 import com.khatago.finance.domain.model.PayableType
-import com.khatago.finance.ui.HomeViewModel
 import com.khatago.finance.ui.HomeUiState
+import com.khatago.finance.ui.HomeViewModel
 import com.khatago.finance.ui.Routes
 import com.khatago.finance.ui.components.EmptyState
 import com.khatago.finance.ui.components.InfoTile
@@ -398,18 +398,19 @@ private fun HeroBalanceCard(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(KhataGoSpacing.md)) {
-            MiniMetric("Paid this month", moneyText(snapshot.monthPaidMinor, currency))
-            MiniMetric("Owed to me", moneyText(snapshot.totalOwedToMeMinor, currency))
-            MiniMetric("Due soon", "${snapshot.dueSoonCount}")
+            // The share-of-row weight is applied *here*: `Modifier.weight` is a RowScope member, so a
+            // child composable cannot reach it on its own — the scope has to be the caller.
+            MiniMetric("Paid this month", moneyText(snapshot.monthPaidMinor, currency), Modifier.weight(1f))
+            MiniMetric("Owed to me", moneyText(snapshot.totalOwedToMeMinor, currency), Modifier.weight(1f))
+            MiniMetric("Due soon", "${snapshot.dueSoonCount}", Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun MiniMetric(label: String, value: String) {
+private fun MiniMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier
-            .weight(1f)
+        modifier = modifier
             .background(Color.White.copy(alpha = 0.62f), RoundedCornerShape(14.dp))
             .padding(horizontal = KhataGoSpacing.md, vertical = KhataGoSpacing.sm),
     ) {

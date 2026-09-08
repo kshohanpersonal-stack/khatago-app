@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
 /**
@@ -30,6 +31,7 @@ import kotlinx.serialization.Transient
  * migrations.
  */
 
+@Serializable
 @Entity(tableName = "profile")
 data class ProfileEntity(
     @PrimaryKey(autoGenerate = true) @Transient val id: Long = 0,
@@ -49,6 +51,7 @@ data class ProfileEntity(
  * A shop the user buys from on credit. No denormalised balance columns: a shop's outstanding
  * amount is always the sum of its credits minus the payments recorded against those credits.
  */
+@Serializable
 @Entity(
     tableName = "shops",
     indices = [Index(value = ["name"], unique = true)],
@@ -75,6 +78,7 @@ data class ShopEntity(
  * The repository validates that the two agree unless `overrideTotal` says the total was typed on
  * purpose, so a mistyped unit price cannot silently rewrite what is owed.
  */
+@Serializable
 @Entity(
     tableName = "shop_credits",
     indices = [Index("shopId"), Index("dueDateEpochDay"), Index("purchaseDateEpochDay"), Index("cancelled")],
@@ -108,6 +112,7 @@ data class ShopCreditEntity(
  * lendings (they owe the user): a single identity table is what stops "Karim" becoming two
  * unrelated records with split balances.
  */
+@Serializable
 @Entity(
     tableName = "people",
     indices = [Index(value = ["name", "relationship"], unique = true)],
@@ -129,6 +134,7 @@ data class PersonEntity(
 }
 
 /** Money the user **owes** a person. */
+@Serializable
 @Entity(
     tableName = "borrowings",
     indices = [Index("personId"), Index("dueDateEpochDay"), Index("cancelled")],
@@ -157,6 +163,7 @@ data class BorrowingEntity(
  * Money a person **owes the user**. Its own table, on purpose: keeping it structurally separate
  * from `borrowings` is what makes "sum the two together by mistake" impossible in SQL.
  */
+@Serializable
 @Entity(
     tableName = "lendings",
     indices = [Index("personId"), Index("dueDateEpochDay"), Index("cancelled")],
@@ -189,6 +196,7 @@ data class LendingEntity(
  * numbers on screen. `interestRatePercent` is stored for reference and shown on the record; it is
  * never used to derive an amount.
  */
+@Serializable
 @Entity(
     tableName = "loans",
     indices = [Index("institution"), Index("endDateEpochDay"), Index("cancelled")],
@@ -219,6 +227,7 @@ data class LoanEntity(
 )
 
 /** An EMI / installment purchase: phone, laptop, fridge, furniture, motorcycle, ... */
+@Serializable
 @Entity(
     tableName = "emi_purchases",
     indices = [Index("merchant"), Index("endDateEpochDay"), Index("cancelled")],
@@ -252,6 +261,7 @@ data class EmiPurchaseEntity(
  * authoritative per-line position is computed by `InstallmentAllocator`, which is what guarantees
  * the schedule can never contradict the obligation's headline balance.
  */
+@Serializable
 @Entity(
     tableName = "installments",
     indices = [
@@ -279,6 +289,7 @@ data class InstallmentEntity(
  * deleting a payment safe — balances are recomputed and history is never destructively merged into
  * the obligation.
  */
+@Serializable
 @Entity(
     tableName = "payments",
     indices = [
@@ -314,6 +325,7 @@ data class PaymentEntity(
     val updatedAt: Long = 0,
 )
 
+@Serializable
 @Entity(
     tableName = "payment_methods",
     indices = [Index(value = ["name"], unique = true)],
@@ -331,6 +343,7 @@ data class PaymentMethodEntity(
     }
 }
 
+@Serializable
 @Entity(
     tableName = "categories",
     indices = [Index(value = ["kind", "name"], unique = true)],
@@ -360,6 +373,7 @@ data class CategoryEntity(
 }
 
 /** Money coming in. Not part of any obligation: a cash-flow record. */
+@Serializable
 @Entity(
     tableName = "incomes",
     indices = [Index("transactionDateEpochDay"), Index("categoryName"), Index("amountMinor")],
@@ -376,6 +390,7 @@ data class IncomeEntity(
     val updatedAt: Long = 0,
 )
 
+@Serializable
 @Entity(
     tableName = "expenses",
     indices = [Index("transactionDateEpochDay"), Index("categoryName"), Index("amountMinor")],
@@ -400,6 +415,7 @@ data class ExpenseEntity(
  * reinstall can re-resolve the path; a missing file degrades to "attachment unavailable" rather
  * than a broken screen.
  */
+@Serializable
 @Entity(
     tableName = "attachments",
     indices = [Index(value = ["targetType", "targetId"])],
@@ -433,6 +449,7 @@ data class AttachmentEntity(
  * this table is for the notes-to-self a person adds deliberately ("collect the deed paper on the
  * 9th"). Included in backups for completeness.
  */
+@Serializable
 @Entity(
     tableName = "reminders",
     indices = [Index("dueDateEpochDay"), Index(value = ["entityType", "entityId"])],
@@ -456,6 +473,7 @@ data class ReminderEntity(
  * "No spam" is therefore a structural property enforced by a UNIQUE index, not a promise in the
  * notification code.
  */
+@Serializable
 @Entity(
     tableName = "reminder_log",
     indices = [
@@ -476,6 +494,7 @@ data class ReminderLogEntity(
  * Non-sensitive key/value settings. Sensitive values (the app-lock PIN) never land here: they are
  * stored as a salted PBKDF2 digest by `SecurityRepository`.
  */
+@Serializable
 @Entity(tableName = "app_settings", primaryKeys = ["key"])
 data class AppSettingEntity(
     val key: String,

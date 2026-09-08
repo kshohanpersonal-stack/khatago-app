@@ -97,7 +97,7 @@ fun AppLockScreen(
                     error = if (coolDownMinutes > 0) {
                         "Too many attempts. Wait $coolDownMinutes minute(s) and try again."
                     } else {
-                        "That PIN does not match. Attempt $failure of ${SecurityPolicy.MAX_ATTEMPTS}."
+                        "That PIN does not match. Attempt $failures of ${SecurityPolicy.MAX_ATTEMPTS}."
                     }
                     pin = ""
                 }

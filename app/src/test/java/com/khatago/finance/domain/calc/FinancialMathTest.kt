@@ -2,6 +2,7 @@ package com.khatago.finance.domain.calc
 
 import com.khatago.finance.core.money.MoneyMinor
 import com.khatago.finance.core.time.Frequency
+import com.khatago.finance.core.time.ScheduleEntry
 import com.khatago.finance.core.time.InstallmentSchedule
 import com.khatago.finance.domain.model.Installment
 import com.khatago.finance.domain.model.InstallmentStatus

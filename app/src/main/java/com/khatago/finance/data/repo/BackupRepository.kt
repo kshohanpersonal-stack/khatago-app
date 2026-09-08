@@ -9,6 +9,7 @@ import com.khatago.finance.data.backup.BackupIssue
 import com.khatago.finance.data.backup.BackupValidation
 import com.khatago.finance.data.backup.BackupValidationResult
 import com.khatago.finance.data.db.KhataGoDatabase
+import com.khatago.finance.data.db.KhataGoSeed
 import com.khatago.finance.data.db.entity.AppSettingEntity
 import com.khatago.finance.data.db.entity.AttachmentEntity
 import com.khatago.finance.data.db.entity.BorrowingEntity
@@ -242,16 +243,19 @@ class BackupRepository(
     private suspend fun reseedReferenceData(document: BackupDocument, stats: ImportStats) {
         if (document.categories.isEmpty()) {
             database.catalogDao().insertCategories(
-                com.khatago.finance.data.db.ExpenseCategorySeed.names.mapIndexed { index, name ->
+                // KhataGoSeed is the one source of the built-in catalogue: a restore that re-seeds
+                // must produce exactly the rows a fresh install has, or "replace everything" would
+                // quietly change a user's category list.
+                KhataGoSeed.EXPENSE_CATEGORIES.mapIndexed { index, name ->
                     CategoryEntity(kind = CategoryEntity.KIND_EXPENSE, name = name, orderIndex = index, builtIn = true)
-                } + com.khatago.finance.data.db.IncomeCategorySeed.names.mapIndexed { index, name ->
+                } + KhataGoSeed.INCOME_CATEGORIES.mapIndexed { index, name ->
                     CategoryEntity(kind = CategoryEntity.KIND_INCOME, name = name, orderIndex = index, builtIn = true)
                 },
             )
         }
         if (document.paymentMethods.isEmpty()) {
             database.catalogDao().insertPaymentMethods(
-                com.khatago.finance.data.db.PaymentMethodSeed.names.mapIndexed { index, name ->
+                KhataGoSeed.PAYMENT_METHODS.mapIndexed { index, name ->
                     PaymentMethodEntity(name = name, orderIndex = index, builtIn = true)
                 },
             )

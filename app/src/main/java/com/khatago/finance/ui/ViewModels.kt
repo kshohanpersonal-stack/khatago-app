@@ -368,7 +368,7 @@ class RecordsViewModel(container: AppContainer) : KhataGoViewModel(container) {
         typeKey = kind,
         id = id,
         title = categoryName,
-        subtitle = counterparty.ifBlank { methodName },
+        subtitle = counterparty?.ifBlank { methodName } ?: methodName,
         totalMinor = amountMinor,
         paidMinor = amountMinor,
         remainingMinor = 0L,
@@ -604,7 +604,3 @@ class SearchViewModel(container: AppContainer) : KhataGoViewModel(container) {
     }
 }
 
-
-@Composable
-fun rememberCurrencyFormatter(currency: CurrencySpec): (Long) -> String =
-    remember(currency) { { minor: Long -> MoneyFormat.format(minor, currency) } }

@@ -1,5 +1,6 @@
 package com.khatago.finance.ui.analytics
 
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,6 +55,7 @@ import com.khatago.finance.ui.components.SectionHeader
 import com.khatago.finance.ui.components.SegmentedControl
 import com.khatago.finance.ui.components.khataGoViewModel
 import com.khatago.finance.ui.components.moneyText
+import com.khatago.finance.ui.components.rememberMoneyFormatter
 import com.khatago.finance.ui.theme.KhataGoColors
 import com.khatago.finance.ui.theme.KhataGoRadii
 import com.khatago.finance.ui.theme.KhataGoSpacing
@@ -179,7 +180,9 @@ fun AnalyticsScreen(
                                 secondColor = KhataGoColors.Overdue,
                             )
                         },
-                        valueLabel = { moneyText(it, currency) },
+                        // A plain (Long) -> String, so it cannot call the @Composable moneyText:
+                        // rememberMoneyFormatter is the non-composable twin built for exactly this.
+                        valueLabel = rememberMoneyFormatter(currency),
                         showValues = true,
                     )
                 }

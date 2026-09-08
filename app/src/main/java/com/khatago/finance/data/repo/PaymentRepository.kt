@@ -10,8 +10,11 @@ import com.khatago.finance.domain.model.ObligationSnapshot
 import com.khatago.finance.domain.model.PayableType
 import com.khatago.finance.domain.model.PaymentEntry
 import com.khatago.finance.domain.model.TransactionKind
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 /**
  * The payment engine — the only code path in KhataGo that writes money against an obligation.
@@ -52,6 +55,24 @@ class PaymentRepository(
      */
     suspend fun resolveOnce(payableType: PayableType?, payableId: Long): ObligationSnapshot? =
         payableType?.let { database.withTransaction { resolver.resolve(it, payableId) } }
+
+    /**
+     * Live snapshot of one payable, for the detail screens.
+     *
+     * Driven by [observePayments] rather than polled: Room re-emits that flow whenever the
+     * `payments` table changes, so every recorded payment re-runs [PayableResolver] — the balance on
+     * screen and the balance the guard enforced are produced by the same code, one way or the other.
+     * `resolveOnce` queries all five obligation tables, hence [Dispatchers.IO]; and a payable that
+     * cannot be resolved (deleted under the user, stale deep link) emits `null`, which the screens
+     * render as "record not found" instead of a number that no longer exists.
+     */
+    fun observeObligation(payableType: PayableType?, payableId: Long): Flow<ObligationSnapshot?> =
+        if (payableType == null) {
+            flowOf(null)
+        } else {
+            observePayments(payableType, payableId)
+                .map { withContext(Dispatchers.IO) { resolveOnce(payableType, payableId) } }
+        }
 
     suspend fun paymentsFor(payableType: PayableType, payableId: Long): List<PaymentEntity> =
         database.paymentDao().findForPayable(payableType.displayName, payableId)

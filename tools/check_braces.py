@@ -3,24 +3,26 @@
 
 The sandbox this project was written in has no JVM, no Android SDK and no network access to a
 package mirror, so `./gradlew` cannot run here. This script is the *weakest* possible substitute:
-it strips comments, string literals and char literals, then checks that braces, parentheses and
+it lexes away comments, string literals and char literals, then checks that braces, parentheses and
 brackets balance per file. It catches the single most likely authoring error in hand-written code
 (an unbalanced block) and nothing else.
 
 It is not a parser, not a type checker, and never a substitute for `./gradlew build`.
 
-Kotlin block comments do **not** nest, which is a trap that cost this repository eight CI rounds: a
-KDoc line mentioning `app/schemas/*.json` closed the comment early at `*/` and left `Unresolved
-reference` errors in ~90 files, while `strip()` above happily treated the `/*` as a nest and reported
-the file as balanced. `check_comments()` therefore models Kotlin's real (non-nesting) rule and is run
-first.
+Kotlin block comments **do nest** (unlike Java's), and that is what makes a stray glob inside KDoc so
+expensive: `app/schemas/*.json` in a doc comment opens a *second* comment, the doc's own `*/` closes
+only that inner one, and the outer comment then swallows the rest of the file. Here that one comment
+deleted all 18 Room entities from the program and produced 1048 compiler errors plus kapt's
+`Could not load module <Error module>` — eight CI rounds before it was found. So the comment scan below
+is not decoration: it reports the two things that are actually illegal — a comment left open at EOF,
+and a `*/` with nothing to close — while *accepting* legitimate nesting.
 
 Two Kotlin details the checker deliberately refuses, because a "clever" fix would be worse than the
 false alarm: an apostrophe or a double quote inside a backtick-quoted identifier (legal in Kotlin, and
 our test names use them) is still read as a string/char opener. So test names must avoid apostrophes.
 Every other construct in this repository's sources is handled.
 
-Run:  python3 tools/check_braces.py $(find app/src -name '*.kt')
+Run:  python3 tools/check_braces.py $(find app/src -name '*.kt')     (or a directory)
 """
 from __future__ import annotations
 
@@ -28,134 +30,136 @@ import sys
 from pathlib import Path
 
 
-def strip(src: str) -> str:
-    out = []
-    i, n = 0, len(src)
-    state = None  # None | line | block | str | char | tri
+def scan(src: str) -> tuple[str, list[tuple[int, str]]]:
+    """(code with comments/strings blanked, list of (line, message) comment problems).
+
+    One lexer for both checks, because this file used to carry two: `strip()` treated block comments as
+    non-nesting while the compiler treats them as nesting, so the tool reported a broken tree as
+    `OK: 91 file(s)` and everyone lost time believing it.
+    """
+    out: list[str] = []
+    problems: list[tuple[int, str]] = []
+    stack: list[int] = []          # line number of every open `/*`
+    state = None                    # None | line | block | str | char | tri
+    i, n, lineno = 0, len(src), 1
     while i < n:
         c = src[i]
         nxt = src[i + 1] if i + 1 < n else ''
+
         if state is None:
             if c == '/' and nxt == '/':
-                state = 'line'; out.append('  '); i += 2; continue
+                state = 'line'
+                out.append('  ')
+                i += 2
+                continue
             if c == '/' and nxt == '*':
-                state = 'block'; out.append('  '); i += 2; continue
+                state = 'block'
+                stack.append(lineno)
+                out.append('  ')
+                i += 2
+                continue
             if src.startswith('"""', i):
-                state = 'tri'; out.append('   '); i += 3; continue
+                state = 'tri'
+                out.append('   ')
+                i += 3
+                continue
             if c == '"':
-                state = 'str'; out.append(' '); i += 1; continue
+                state = 'str'
+                out.append(' ')
+                i += 1
+                continue
             if c == "'":
-                state = 'char'; out.append(' '); i += 1; continue
-            out.append(c); i += 1; continue
+                state = 'char'
+                out.append(' ')
+                i += 1
+                continue
+            if c == '*' and nxt == '/':
+                problems.append((lineno, '`*/` with no block comment open'))
+            out.append(c)
+            i += 1
+            continue
+
         if state == 'line':
             if c == '\n':
                 state = None
                 out.append('\n')
             else:
                 out.append(' ')
+            lineno += c == '\n'
             i += 1
             continue
+
         if state == 'block':
+            # Inside a comment only the comment delimiters mean anything — quotes do not, which is why
+            # `/* don't */` is fine and why a KDoc apostrophe never starts a string here.
+            if c == '/' and nxt == '*':
+                stack.append(lineno)          # legal in Kotlin: comments nest
+                out.append('  ')
+                i += 2
+                continue
             if c == '*' and nxt == '/':
-                state = None; out.append('  '); i += 2; continue
+                if stack:
+                    stack.pop()
+                state = None if not stack else 'block'
+                out.append('  ')
+                i += 2
+                continue
             out.append('\n' if c == '\n' else ' ')
+            if c == '\n':
+                lineno += 1
             i += 1
             continue
+
         if state == 'tri':
             if src.startswith('"""', i):
-                state = None; out.append('   '); i += 3; continue
+                state = None
+                out.append('   ')
+                i += 3
+                continue
             out.append('\n' if c == '\n' else ' ')
+            if c == '\n':
+                lineno += 1
             i += 1
             continue
+
         # str / char
         if c == '\\':
-            out.append('  '); i += 2; continue
+            out.append('  ')
+            i += 2
+            continue
         quote = '"' if state == 'str' else "'"
         if c == quote:
-            state = None; out.append(' '); i += 1; continue
+            state = None
+            out.append(' ')
+            i += 1
+            continue
         if c == '\n':
+            # A single-quoted literal cannot span lines; a " that leaks is handled by the next state.
             state = None
             out.append('\n')
+            lineno += 1
             i += 1
             continue
         out.append(' ')
         i += 1
-    return ''.join(out)
 
-
-def comment_scan(src: str) -> tuple[list[int], list[int]]:
-    """(lines where a `/*` appears *inside* a block comment, line of the unterminated opener).
-
-    Mirrors the lexer in `strip()` but without block-comment nesting, exactly as Kotlin scans.
-    """
-    nested: list[int] = []
-    i, n, lineno = 0, len(src), 1
-    state = None  # None | line | block | str | char | tri
-    block_open_line = 0
-    while i < n:
-        c = src[i]
-        nxt = src[i + 1] if i + 1 < n else ""
-        if c == "\n":
-            lineno += 1
-            if state == "line":
-                state = None
-        if state is None:
-            if c == "/" and nxt == "/":
-                state = "line"; i += 2; continue
-            if c == "/" and nxt == "*":
-                state = "block"; block_open_line = lineno; i += 2; continue
-            if src.startswith('"""', i):
-                state = "tri"; i += 3; continue
-            if c == '"':
-                state = "str"; i += 1; continue
-            if c == "'":
-                state = "char"; i += 1; continue
-            i += 1; continue
-        if state == "line":
-            i += 1; continue
-        if state == "block":
-            if c == "*" and nxt == "/":
-                state = None; i += 2; continue
-            if c == "/" and nxt == "*":
-                nested.append(lineno)      # Kotlin just closed nothing: it will end at the next */
-                i += 2; continue
-            i += 1; continue
-        if state == "tri":
-            if src.startswith('"""', i):
-                state = None; i += 3; continue
-            i += 1; continue
-        # str / char
-        if c == "\\":
-            i += 2; continue
-        quote = '"' if state == "str" else "'"
-        if c == quote:
-            state = None; i += 1; continue
-        if c == "\n":
-            state = None
-        i += 1
-    return nested, ([block_open_line] if state == "block" else [])
-
-
-def check_comments(path: Path) -> bool:
-    src = path.read_text(encoding="utf-8")
-    nested, unterminated = comment_scan(src)
-    ok = True
-    for line in nested:
-        print(f"FAIL {path}:{line} `/*` inside a block comment — Kotlin comments do not nest, so the "
-              f"comment ends at the next `*/` and the rest of the line becomes code")
-        ok = False
-    for line in unterminated:
-        print(f"FAIL {path}:{line} block comment opened here is never closed")
-        ok = False
-    return ok
+    for line in stack:
+        problems.append((line, 'block comment opened here is never closed (Kotlin comments nest, so a '
+                               '`/*` inside a comment needs its own `*/)'))
+    return ''.join(out), problems
 
 
 def check(path: Path) -> bool:
-    src = strip(path.read_text(encoding='utf-8'))
+    src = path.read_text(encoding='utf-8')
+    code, problems = scan(src)
+    ok = True
+    for line, why in problems:
+        print(f'FAIL {path}:{line} {why}')
+        ok = False
     depth = {'{': 0, '(': 0, '[': 0}
     closer = {'}': '{', ')': '(', ']': '['}
     first_negative = None
-    for lineno, line in enumerate(src.split('\n'), 1):
+    for lineno, line in enumerate(code.split('\n'), 1):
         for ch in line:
             if ch in depth:
                 depth[ch] += 1
@@ -166,9 +170,9 @@ def check(path: Path) -> bool:
                     first_negative = lineno
     bad = {k: v for k, v in depth.items() if v}
     if bad or first_negative:
-        print(f"FAIL {path} depth={depth} first_closer_without_opener_line={first_negative}")
-        return False
-    return True
+        print(f'FAIL {path} depth={depth} first_closer_without_opener_line={first_negative}')
+        ok = False
+    return ok
 
 
 def main(argv: list[str]) -> int:
@@ -180,13 +184,13 @@ def main(argv: list[str]) -> int:
         else:
             files.append(p)
     if not files:
-        print("no .kt files given")
+        print('no .kt files given')
         return 1
-    failed = [f for f in files if not (check_comments(f) and check(f))]
+    failed = [f for f in files if not check(f)]
     if failed:
-        print(f"{len(failed)}/{len(files)} file(s) unbalanced or with a malformed comment")
+        print(f'{len(failed)}/{len(files)} file(s) unbalanced or with a malformed comment')
         return 1
-    print(f"OK: {len(files)} file(s) balanced, comments well-formed (structure only, not a compile)")
+    print(f'OK: {len(files)} file(s) balanced, comments well-formed (structure only, not a compile)')
     return 0
 
 

@@ -8,7 +8,6 @@ import com.khatago.finance.core.time.AppDates
 import com.khatago.finance.core.time.DueStatus
 import com.khatago.finance.domain.model.LedgerStatus
 import com.khatago.finance.domain.model.PayableType
-import com.khatago.finance.ui.theme.KhataGoColors
 
 /**
  * Display glue between the pure core and Compose.
@@ -47,9 +46,6 @@ fun StatusTone.Companion.forDue(status: DueStatus): StatusTone = when (status) {
     DueStatus.Upcoming -> StatusTone.Active
     DueStatus.NoDueDate -> StatusTone.Info
 }
-
-fun StatusTone.Companion.info(): StatusTone =
-    StatusTone(KhataGoColors.InfoBg, KhataGoColors.Info, KhataGoColors.Info, "information")
 
 fun StatusTone.Companion.forDirection(isOwedToMe: Boolean): StatusTone =
     if (isOwedToMe) StatusTone.OwedToMe else StatusTone.Active

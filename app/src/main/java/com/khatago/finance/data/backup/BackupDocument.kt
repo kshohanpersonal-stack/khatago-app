@@ -81,7 +81,7 @@ data class BackupDocument(
     /** Metadata block shown in the restore confirmation, so the user sees *what* they are importing. */
     fun summary(): String = buildString {
         append("KhataGo backup v$backupVersion · ")
-        append("$recordCount records · ")
+        append("${recordCount()} records · ")
         append("currency $currencyCode")
         if (createdAt > 0L) append(" · created ${BackupTime.format(createdAt)}")
     }

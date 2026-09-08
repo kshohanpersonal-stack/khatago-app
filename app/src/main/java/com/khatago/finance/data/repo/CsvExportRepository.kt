@@ -83,9 +83,12 @@ class CsvExportRepository(
 
     suspend fun write(uri: Uri, csv: String): Boolean = withContext(Dispatchers.IO) {
         runCatching {
+            // The lambda must return a Boolean on *every* path: `use {}` alone yields Unit, which
+            // made `runCatching` infer `Any` and the whole function fail to type-check.
             context.contentResolver.openOutputStream(uri, "wt")?.use { stream ->
                 stream.write(csv.toByteArray(Charsets.UTF_8))
                 stream.flush()
+                true
             } ?: false
         }.getOrDefault(false)
     }
@@ -291,7 +294,10 @@ class CsvExportRepository(
         }
         listOf(PayableType.Loan, PayableType.Emi, PayableType.Borrowing, PayableType.Lending)
             .flatMap { type -> outstandingOf(type, today, currency) }
-            .forEach { writer.row(it.first, it.second, it.third, it.fourth, it.fifth, it.sixth, it.seventh) }
+            // `outstandingOf` builds a flat List<String> per row, so spread it: positional
+            // `it.first … it.seventh` accessors only exist on Pair/Triple, and hard-coding seven
+            // columns here would silently break the day a report gains a column.
+            .forEach { row -> writer.row(*row.toTypedArray()) }
     }
 
     private suspend fun outstandingOf(

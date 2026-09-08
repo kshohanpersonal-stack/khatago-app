@@ -13,6 +13,18 @@ Catches the four import defects a `check_braces` pass cannot see:
      defect that cost the most CI rounds here: it is an unresolved reference, which kapt reports only as
      `e: Could not load module <Error module>`, with no file and no line.
   4. The same import written twice (a re-shuffled import block leaves both the old and the new line).
+  5. A name that is *used* but never imported — the family that cost the most time here, because this
+     script originally only judged imports that had already been written. `KhataGoSeed.kt` used
+     `CategoryEntity` and `AppSettingEntity` with no imports at all in the file (31 compiler errors),
+     and two screens reached for `Icons.AutoMirrored.Filled.KeyboardArrowRight` the same way. Two
+     oracles find these without a compiler:
+       (a) every top-level name this project declares must be imported by any file in a *different*
+           package that mentions it; and
+       (b) every library name the repo already imports — unambiguously, from one package — must be
+           imported by every other file that mentions it bare. That catches `Box`, `RoundedCornerShape`,
+           `Composable` and friends, which are types in libraries we cannot enumerate ourselves.
+     Names reached through a dot (`Modifier.weight`, `ActivityResultContracts.OpenDocument`) are skipped:
+     those resolve through the receiver or the qualified root, not through an import of the last part.
 
 Usage:  python3 tools/audit_imports.py [path ...]     (defaults to app/src)
 """
@@ -53,6 +65,38 @@ def strip_noise(text: str) -> str:
     return STRINGS.sub('""', text)
 
 
+PRIVATE = re.compile(r'^private\b')
+FUN_NAME = re.compile(r'^(?:(?:public |internal |@\w+(?:\([^)]*\))? )*)fun (\w+)\(', re.M)
+PROP_NAME = re.compile(r'^(?:(?:public |internal |@\w+(?:\([^)]*\))? )*)(?:const val|val|var) (\w+)\s*[:=]', re.M)
+TYPE_NAME = re.compile(
+    r'^(?:(?:public |internal |@\w+(?:\([^)]*\))? )*)'
+    r'(?:abstract |sealed |open |data |value |annotation |enum )*'
+    r'(?:class|interface|object)\s+(\w+)', re.M)
+TYPE_ALIAS = re.compile(r'^typealias\s+(\w+)', re.M)
+
+
+def _declarations(text: str) -> list[tuple[int, str, str]]:
+    """(line index, kind, name) for top-level declarations, so privacy can be read off the same line."""
+    out: list[tuple[int, str, str]] = []
+    for kind, rx in (('type', TYPE_NAME), ('alias', TYPE_ALIAS), ('fun', FUN_NAME), ('prop', PROP_NAME)):
+        for m in rx.finditer(text):
+            out.append((text[:m.start()].count('\n'), kind, m.group(1)))
+    return out
+
+
+def _line(lines: list[str], index: int) -> str:
+    return lines[index] if 0 <= index < len(lines) else ''
+
+
+def importable_top_level_names(text: str) -> set[str]:
+    """Top-level names another file could legally `import` — public or internal, never private."""
+    lines = text.split('\n')
+    return {
+        name for i, _kind, name in _declarations(text)
+        if not PRIVATE.search(_line(lines, i)) and ' private ' not in _line(lines, i)
+    }
+
+
 def collect() -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     """(per-file names, per-package names) for every Kotlin file under app/src.
 
@@ -84,13 +128,85 @@ def collect() -> tuple[dict[str, set[str]], dict[str, set[str]]]:
         )
         by_file.setdefault(package + '.' + f.stem, set()).update(names)
         by_package.setdefault(package, set()).update(names)
-        everywhere.setdefault(package, set()).update(
-            set(TOP_LEVEL.findall(text)) | set(FUN_OR_VAL.findall(text))
-        )
+        # Only *bare, importable* names belong in this oracle, which rules out two things the naive
+        # reading gets wrong: an extension declaration (`fun List<Row>.grouped()`) declares `grouped`,
+        # not `List`; and a `private` declaration cannot be imported by anybody, so reporting it as
+        # "missing an import" would be wrong twice over. Getting this wrong turned the checker's first
+        # run into 100 false positives about `String` and `List` that hid the real findings.
+        everywhere.setdefault(package, set()).update(importable_top_level_names(text))
         parts = package.split('.')
         for i in range(3, len(parts) + 1):
             by_package.setdefault('.'.join(parts[:i]), set())
     return by_file, by_package, everywhere
+
+
+BARE = re.compile(r'(?<![.\w])([A-Za-z_]\w*)')
+
+
+def missing_import_problems(everywhere: dict[str, set[str]]) -> list[tuple[Path, str]]:
+    """Defect 5: a name used bare with nothing importing it. See the module docstring."""
+    own: dict[str, set[str]] = {}          # our top-level names -> declaring package(s)
+    for package, names in everywhere.items():
+        for n in names:
+            own.setdefault(n, set()).add(package)
+
+    lib: dict[str, set[str]] = {}           # library names -> packages they are imported from
+    for f in sorted(SRC.rglob("*.kt")):
+        for fqn, _alias in IMPORT.findall(f.read_text(encoding="utf-8")):
+            if fqn.startswith(PKG + "."):
+                continue
+            parent, _, last = fqn.rpartition(".")
+            if parent and last:
+                lib.setdefault(last, set()).add(parent)
+
+    # What each package *declares*, top-level only. `by_package` cannot be used here: it is
+    # deliberately generous (it also collects names merely referenced at the start of an indented line,
+    # so that defect 3 can judge a wrong import) and that generosity made every type used in a file look
+    # like a neighbour of that file's package — the checker then approved the very missing import it
+    # exists to find.
+    same_package: dict[str, set[str]] = {}
+    texts: dict[Path, str] = {}
+    for f in sorted(SRC.rglob("*.kt")):
+        text = f.read_text(encoding="utf-8")
+        texts[f] = text
+        pkg = re.search(r"^package\s+([\w.]+)", text, re.M)
+        if pkg is not None:
+            same_package.setdefault(pkg.group(1), set()).update(importable_top_level_names(text))
+
+    out: list[tuple[Path, str]] = []
+    for f, text in texts.items():
+        pkg = re.search(r"^package\s+([\w.]+)", text, re.M)
+        if pkg is None:
+            continue
+        package = pkg.group(1)
+        body = strip_noise(re.sub(r"^import .*$", "", text, flags=re.M))
+        imported = {a.rpartition(".")[2] for a, _ in IMPORT.findall(text)}
+        declared = set(TOP_LEVEL.findall(text)) | set(FUN_OR_VAL.findall(text))
+        neighbours = same_package.get(package, set())
+        # Enum entries are declared at indentation, are Capitalized and are never imported — without
+        # this, `Report`'s own `Payments("khatago-payments.csv", "Payments"),` line reads as a bare use
+        # of `Icons.Outlined.Payments`, which other files do import.
+        for m in re.finditer(r'^\s*enum class\s+\w+[^{]*\{([\s\S]*?)^\s*\}', text, re.M):
+            for line in m.group(1).split('\n'):
+                entry = re.match(r'\s*([A-Z]\w*)', line)
+                if entry:
+                    declared.add(entry.group(1))
+        uses = set(BARE.findall(body))
+        called = set(re.findall(r'\b([a-z]\w*)\s*\(', body))
+        for name in sorted(uses):
+            if name in imported or name in declared or name in neighbours or name in ALLOWED_UNKNOWN:
+                continue
+            home = own.get(name)
+            # A lowercase top-level function is only a problem if it is actually *called* here: the same
+            # letters turn up constantly as parameter and property names (`statusLabel = ...`).
+            if home and (name[0].isupper() or name in called):
+                homes = "/".join(sorted(home))
+                out.append((f, f"uses {name}, declared in {homes}, with no import"))
+                continue
+            libs = lib.get(name)
+            if libs and len(libs) == 1 and name[0].isupper():
+                out.append((f, f"uses {name} bare; every other file imports it from {next(iter(libs))}"))
+    return out
 
 
 def main(argv: list[str]) -> int:
@@ -140,6 +256,9 @@ def main(argv: list[str]) -> int:
                     continue
                 if re.search(rf'\b{re.escape(last)}\b', body) is None:
                     problems.append(f'{f.relative_to(ROOT)}: unused import {fqn}')
+
+    for f, why in missing_import_problems(everywhere):
+        problems.append(f'{f.relative_to(ROOT)}: {why}')
 
     print(f'checked {checked} import statements across {len(list(SRC.rglob("*.kt")))} files')
     for line in problems:

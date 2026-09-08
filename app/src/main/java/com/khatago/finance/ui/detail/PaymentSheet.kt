@@ -101,9 +101,27 @@ fun PaymentSheetRoute(
 
     val today = remember { AppDates.today() }
 
+    // The module is decided from the nav argument, never from the row that comes back: a payment has to
+    // be *submitted* against the same payable the sheet was opened for, and trusting the query result
+    // would let a stale deep link point a payment at a different module.
+    val module = payableType ?: PayableType.ShopCredit
     LaunchedEffect(type, id) {
         val resolved = container.paymentRepository.resolveOnce(payableType, id)
-        snapshot = resolved
+        // `ObligationSnapshot` carries the figures; the sheet needs them labelled as a PaymentTarget so
+        // the same object can drive both the pay-off bar and the `record` call below.
+        snapshot = resolved?.let { obligation ->
+            PaymentTarget(
+                payableType = module,
+                id = id,
+                title = obligation.title,
+                subtitle = obligation.subtitle,
+                originalMinor = obligation.originalMinor,
+                paidMinor = obligation.recordedPaidMinor,
+                remainingMinor = obligation.remainingMinor,
+                dueDateEpochDay = obligation.dueDateEpochDay,
+                cancelled = obligation.cancelled,
+            )
+        }
         currency = container.catalogRepository.findProfile().let { CurrencySpec.fromCode(it?.currencyCode) }
         methods = container.catalogRepository.findEnabledPaymentMethods().map { it.name }
         methodName = methods.firstOrNull() ?: "Cash"
@@ -111,9 +129,9 @@ fun PaymentSheetRoute(
             // Prefill: the remaining amount, or the next installment's amount when there is one.
             com.khatago.finance.core.money.MoneyFormat.toCsvNumber(it.remainingMinor, currency)
         }.orEmpty()
-        if (resolved?.payableType == PayableType.Loan || resolved?.payableType == PayableType.Emi) {
+        if (module == PayableType.Loan || module == PayableType.Emi) {
             val progress = container.obligationRepository.observeScheduleProgress(
-                ownerType = resolved.payableType,
+                ownerType = module,
                 ownerId = id,
                 todayEpochDay = today,
             ).first()
@@ -121,7 +139,7 @@ fun PaymentSheetRoute(
                 .filter { !it.isSettled }
                 .map { InstallmentChoice(it.id, it.number, it.scheduledMinor, it.dueDateEpochDay, it.allocatedMinor) }
         }
-        history = container.paymentRepository.paymentsFor(resolved?.payableType ?: PayableType.ShopCredit, id)
+        history = container.paymentRepository.paymentsFor(module, id)
         loading = false
     }
 

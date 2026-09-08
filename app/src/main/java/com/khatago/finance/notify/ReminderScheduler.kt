@@ -71,15 +71,11 @@ class ReminderScheduler(
         val request = PeriodicWorkRequestBuilder<ReminderWorker>(1, TimeUnit.DAYS)
             .setInitialDelay(delayToNext(hour), TimeUnit.MINUTES)
             .addTag(WORK_TAG)
-            .setConstraints(
-                androidx.work.Constraints.Builder()
-                    // No network constraint: everything needed is already on the device. Stating
-                    // this explicitly also documents that the job has no reason to wait for wifi.
-                    .setRequiresNetworkConnectivity(false)
-                    .setRequiresCharging(false)
-                    .setRequiresBatteryNotLow(false)
-                    .build(),
-            )
+            // No constraints at all, on purpose: everything the worker reads is already on the
+            // device, so any constraint (network, charging, battery) would only delay a reminder
+            // that is worthless once the morning has passed. `Constraints.Builder` also has no
+            // `setRequiresNetworkConnectivity` in WorkManager 2.9 — "not required" is the default.
+            .setConstraints(androidx.work.Constraints.Builder().build())
             .build()
         workManager.enqueueUniquePeriodicWork(
             WORK_NAME,

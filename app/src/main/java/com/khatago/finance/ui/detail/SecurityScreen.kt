@@ -126,7 +126,7 @@ fun SecurityRoute(container: AppContainer, onBack: () -> Unit) {
                         dialog = if (want) SecurityDialog.Create else SecurityDialog.Remove
                     },
                 )
-                if (pin != null) {
+                if (lockOn) {   // `isLockEnabled` *is* "a PIN exists"
                     Spacer(Modifier.height(KhataGoSpacing.sm))
                     SettingsActionRow(
                         icon = KhataGoIcons.Edit,
@@ -416,7 +416,7 @@ private fun SettingsActionRow(
             )
         }
         Icon(
-            imageVector = androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            imageVector = androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight,
             contentDescription = null,
             tint = KhataGoColors.Ink400,
         )

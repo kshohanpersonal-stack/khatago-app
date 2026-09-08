@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.khatago.finance.AppContainer
+import com.khatago.finance.BuildConfig
 import com.khatago.finance.core.money.CurrencySpec
 import com.khatago.finance.data.db.entity.AppSettingEntity
 import com.khatago.finance.data.db.entity.CategoryEntity
@@ -373,7 +374,7 @@ private fun ReminderToggles(container: AppContainer, onNotice: (String) -> Unit)
 }
 
 @Composable
-private fun SettingsLinkRow(
+internal fun SettingsLinkRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,

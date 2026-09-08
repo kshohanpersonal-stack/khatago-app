@@ -97,7 +97,7 @@ fun BackupRestoreRoute(container: AppContainer, onBack: () -> Unit) {
         }
     }
 
-    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument) { uri ->
+    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             busy = true

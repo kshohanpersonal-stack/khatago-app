@@ -132,14 +132,28 @@ GitHub serves Actions logs and artefacts from hosts that some networks block, so
 unreadable both in the browser *and* from a sandbox. The build job publishes its own report instead:
 
 ```bash
-# 1. The ci-diagnostics branch (pushed only by a failing run) — plain git, never blocked:
-git fetch origin ci-diagnostics
-git show FETCH_HEAD:kapt-disabled.md   # every `e:` line from the five probes, then the failure summaries
-git show FETCH_HEAD:kapt-disabled.txt  | less   # last 150 raw lines of each probe
-git show FETCH_HEAD:build-errors.txt   | less   # the Gradle "What went wrong" block + tests.log tail
-git show FETCH_HEAD:diagnostics.md     # annotations-style short summary from the build job
-git show FETCH_HEAD:tests.log          # the whole test step, verbatim
+# 1. The ci-diagnostics branch (pushed by the diagnose job whenever a run is red) — plain git, never blocked:
+git fetch -q origin ci-diagnostics
+git show FETCH_HEAD:rev.txt        # which commit the diagnostics belong to — check this first
+git show FETCH_HEAD:report.md      # every `e:` line of every probe, grouped, plus the task headers
+git show FETCH_HEAD:p1.log         | less   # the whole probe: compileDebugKotlin with kapt disabled
+git show FETCH_HEAD:p2.log         | less   # compileDebugUnitTestKotlin, same treatment: test sources too
+git show FETCH_HEAD:status.txt     # exit code, line count and diagnostic count per probe
+git show FETCH_HEAD:tools.txt      # which gradle/java actually ran
+git show FETCH_HEAD:tests.log      | less   # the build job's test step, verbatim, when it got that far
 ```
+
+The grouping command that turns a probe log into a work list, because fixing 126 errors one at a time is
+how a week disappears:
+
+```bash
+git show FETCH_HEAD:p1.log | grep -E "^e: " | sed -E 's/:[0-9]+:[0-9]+ / /' | sort | uniq -c | sort -rn
+```
+
+It is normal for the count to be huge and the causes to be few: one unclosed comment in one file removes
+every type it wraps, and each missing import multiplies by every line that touches the type. Fix the
+comment, the import and the *declaration* mismatches first, then re-run — the tail of the list is usually
+fallout from the head of it, and re-reading a fresh run is cheaper than reasoning about stale output.
 
 Delete the branch when the build is green again: `git push origin :ci-diagnostics`.
 
@@ -153,16 +167,24 @@ reference somewhere in ~90 files) and not the file, and re-running the same task
 same line again. The fix is to make the same sources compile through a path that does report diagnostics.
 
 The build itself never disables kapt — `compileDebugKotlin` runs after it, Room's processor runs, and the
-APK needs both. The `diagnose-compile` job, which runs only `if: failure()`, re-compiles the same sources five ways, as
-five explicit steps (never a shell loop over a task list: Gradle reads stdin, so a `while read ... done <
-list` loop swallows its own input and the remaining probes silently do not run). Probe 1 repeats the
-failing task with `--stacktrace` to expose the whole exception chain; probes 2 and 3 run
-`compileDebugKotlin` and `compileDebugUnitTestKotlin` through an init script that sets `enabled = false` on
-every `kapt*` task — same sources, same classpath, no stub mode — which is the path that prints
-`file:line:col`; probe 4 turns incremental compilation off, and probe 5 the configuration cache, to rule
-those two mechanisms in or out. Each probe's raw tail is published as its own file (`probe1.txt` …
-`probe5.txt`) beside a combined `kapt-disabled.md`. Nothing here is a build: the real job still runs kapt,
-Room and the tests, and the job is named for what it produces.
+APK needs both. The `diagnose-compile` job re-compiles the same sources four ways, as four explicit steps
+inside one loop over a `|`-delimited table (never a shell loop over a task list fed by `while read`: Gradle
+reads stdin, so such a loop swallows its own input and the remaining probes silently do not run). Probes 1
+and 2 run `:app:compileDebugKotlin` and `:app:compileDebugUnitTestKotlin` through an init script that sets
+`enabled = false` on every `kapt*` task — same sources, same classpath, no stub mode — which is the path
+that prints `file:line:col`, and it is the only path that has ever produced an actionable diagnosis here.
+Probes 3 and 4 re-run the stub task with incremental compilation off and with the configuration cache off,
+to rule those mechanisms in or out. Each probe writes its full output to `$GITHUB_WORKSPACE/.diag/pN.log`
+(the workspace, not `/tmp`: the earlier habit of handing files between steps through `/tmp` lost a
+diagnosis three times), and the job publishes the whole directory after every probe so a cancelled run
+still carries what has been learned. Nothing here is a build: the real job still runs kapt, Room and the
+tests, and the job is named for what it produces.
+
+Once the diagnostics are readable, the remaining skill is *believing* them. `Unresolved reference` inside a
+file whose own top-level types are all missing means the file failed to parse, not that the reference is
+wrong; `Cannot infer a type for this parameter` is usually fallout two lines above; and a name that exists
+somewhere in the project is exactly what `tools/audit_symbols.py` cannot see, which is why
+`tools/audit_imports.py` now also demands that every used name be imported.
 
 ## Enabling CI in a fresh clone
 

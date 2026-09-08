@@ -1,9 +1,9 @@
 package com.khatago.finance.data.db
 
+import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import android.content.Context
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.khatago.finance.data.db.dao.CatalogDao
 import com.khatago.finance.data.db.dao.CreditDao
@@ -37,6 +37,16 @@ import com.khatago.finance.data.db.entity.ShopCreditEntity
 import com.khatago.finance.data.db.entity.ShopEntity
 
 /**
+ * Database version. `1` is the shipped v1.0.0 schema; see [KhataGoMigrations] for the rules when this
+ * number moves. It is a top-level constant because the `@Database` annotation needs a compile-time
+ * constant, and the About screen prints the same value rather than a hardcoded string.
+ */
+const val KHATAGO_DB_VERSION: Int = 1
+
+/** The file name is stable forever: renaming it would orphan every existing user's ledger. */
+const val KHATAGO_DB_NAME: String = "khatago.db"
+
+/**
  * The one Room database. All tables are in a single database on purpose: KhataGo's core promise is
  * that a payment, the obligation it settles, and the totals built from both are always consistent —
  * and the only way to *guarantee* that across modules is to let SQLite commit them in one
@@ -66,16 +76,6 @@ import com.khatago.finance.data.db.entity.ShopEntity
     version = KHATAGO_DB_VERSION,
     exportSchema = true,
 )
-/**
- * Database version. `1` is the shipped v1.0.0 schema; see [KhataGoMigrations] for the rules when this
- * number moves. It is a top-level constant because the `@Database` annotation needs a compile-time
- * constant, and the About screen prints the same value rather than a hardcoded string.
- */
-const val KHATAGO_DB_VERSION: Int = 1
-
-/** The file name is stable forever: renaming it would orphan every existing user's ledger. */
-const val KHATAGO_DB_NAME: String = "khatago.db"
-
 abstract class KhataGoDatabase : RoomDatabase() {
 
     abstract fun shopDao(): ShopDao

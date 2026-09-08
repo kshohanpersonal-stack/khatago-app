@@ -1,6 +1,7 @@
 package com.khatago.finance.ui.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisallowComposableCalls
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
@@ -20,7 +21,7 @@ import com.khatago.finance.container
  */
 @Composable
 inline fun <reified VM : ViewModel> khataGoViewModel(
-    crossinline create: (AppContainer) -> VM,
+    @DisallowComposableCalls crossinline create: (AppContainer) -> VM,
 ): VM {
     val container = LocalContext.current.container
     val factory = remember(container) {

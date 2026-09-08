@@ -267,7 +267,7 @@ private fun HubRow(
             )
         }
         Icon(
-            imageVector = androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            imageVector = androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight,
             contentDescription = null,
             tint = KhataGoColors.Ink400,
         )

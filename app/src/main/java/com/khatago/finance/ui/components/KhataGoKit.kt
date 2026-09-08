@@ -144,8 +144,14 @@ fun AnimatedMoney(
     style: androidx.compose.ui.text.TextStyle = KhataGoTypography.headlineMoney,
     color: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    val reduced = androidx.compose.ui.platform.LocalAccessibilityManager.current
-        ?.shouldReduceMotion() == true
+    // There is no AccessibilityManager.shouldReduceMotion(); the supported signal is the system's
+    // own "remove animations" switch, i.e. the animation scales being zero. Reading a setting needs no
+    // permission and no new dependency, and it honours what the user already told the device.
+    val reduced = android.provider.Settings.Global.getFloat(
+        androidx.compose.ui.platform.LocalContext.current.contentResolver,
+        android.provider.Settings.Global.TRANSITION_ANIMATION_SCALE,
+        1f,
+    ) == 0f
     var target by remember { mutableFloatStateOf(amountMinor.toFloat()) }
     LaunchedEffect(amountMinor) {
         if (reduced) {
@@ -228,6 +234,9 @@ data class StatusTone(
         )
         val Cancelled = StatusTone(
             KhataGoColors.Ink100, KhataGoColors.Ink500, KhataGoColors.Ink400, "cancelled",
+        )
+        val Info = StatusTone(
+            KhataGoColors.InfoBg, KhataGoColors.Info, KhataGoColors.Info, "information",
         )
     }
 }
@@ -415,7 +424,7 @@ fun DetailTopBar(
     title: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    actions: @Composable RowScopeContent = {},
+    actions: RowScopeContent = {},
 ) {
     TopAppBar(
         title = {

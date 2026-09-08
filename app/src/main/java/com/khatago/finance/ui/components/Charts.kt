@@ -1,8 +1,10 @@
 package com.khatago.finance.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,10 +12,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,7 +33,6 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.graphics.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.khatago.finance.ui.theme.KhataGoColors
 import com.khatago.finance.ui.theme.KhataGoSpacing
@@ -57,12 +58,13 @@ import java.util.Locale
 
 /** Shared animation driver so every chart on a screen grows at the same rate. */
 @Composable
-private fun rememberChartProgress(key: Any?): Animatable = remember(key) { Animatable(0f) }.also { progress ->
-    LaunchedEffect(key) {
-        progress.snapTo(0f)
-        progress.animateTo(1f, animationSpec = tween(650, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+private fun rememberChartProgress(key: Any?): Animatable<Float, AnimationVector1D> =
+    remember(key) { Animatable(0f) }.also { progress ->
+        LaunchedEffect(key) {
+            progress.snapTo(0f)
+            progress.animateTo(1f, animationSpec = tween(650, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        }
     }
-}
 
 data class BarDatum(
     val label: String,
@@ -211,12 +213,17 @@ fun LineChart(
                 moveTo(points.first().x, points.first().y)
                 points.drop(1).forEach { lineTo(it.x, it.y) }
             }
+            // The fill is a second, closed path — `androidx.compose.ui.graphics.Path` is mutable and has
+            // no `copy()`, so mutating the line path and then reusing it would draw the outline closed.
+            val fill = Path().apply {
+                moveTo(points.first().x, points.first().y)
+                points.forEach { lineTo(it.x, it.y) }
+                lineTo(points.last().x, size.height)
+                lineTo(points.first().x, size.height)
+                close()
+            }
             drawPath(
-                path = path.copy().apply {
-                    lineTo(points.last().x, size.height)
-                    lineTo(points.first().x, size.height)
-                    close()
-                },
+                path = fill,
                 brush = Brush.verticalGradient(listOf(fillColor.copy(alpha = 0.9f), fillColor.copy(alpha = 0.1f))),
             )
             drawPath(path = path, color = lineColor, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
@@ -287,8 +294,10 @@ fun DonutChart(
                     startAngle = startAngle,
                     sweepAngle = (sweep - 2f).coerceAtLeast(0.6f),
                     useCenter = false,
-                    topLeft = Offset(inset, inset),
-                    size = Size(size.width - stroke, size.height - stroke),
+                    // radius + centre rather than topLeft + size: passing `size` by name next to
+                    // DrawScope's own `size` makes `drawArc`'s two overloads equally applicable.
+                    center = Offset(inset + (size.width - stroke) / 2f, inset + (size.height - stroke) / 2f),
+                    radius = (size.width - stroke) / 2f,
                     style = Stroke(width = stroke, cap = StrokeCap.Round),
                 )
                 startAngle += sweep

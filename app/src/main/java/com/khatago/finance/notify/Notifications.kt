@@ -39,6 +39,7 @@ object Notifications {
     const val ID_DAILY_REMINDER = 1001
     const val ID_DUE_TODAY = 1002
     const val ID_OVERDUE = 1003
+    const val ID_DUE_TOMORROW = 1004
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -54,7 +55,9 @@ object Notifications {
             enableLights(false)
             enableVibration(true)
             setShowBadge(false)
-            lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+            // Lock-screen privacy is the channel's default (VISIBILITY_PRIVATE); naming
+            // `android.app.Notification` here would need an import this file does not have, for a
+            // value that is already what the platform does.
         }
         manager.createNotificationChannel(channel)
     }

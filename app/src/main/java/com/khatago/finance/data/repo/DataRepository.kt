@@ -6,6 +6,7 @@ import com.khatago.finance.core.time.AppDates
 import com.khatago.finance.core.time.Frequency
 import com.khatago.finance.core.time.InstallmentSchedule
 import com.khatago.finance.data.db.KhataGoDatabase
+import com.khatago.finance.data.db.entity.AppSettingEntity
 import com.khatago.finance.data.db.entity.BorrowingEntity
 import com.khatago.finance.data.db.entity.EmiPurchaseEntity
 import com.khatago.finance.data.db.entity.ExpenseEntity
@@ -387,7 +388,7 @@ object SampleData {
                 ),
                 schedule("loan", 1, loanOneFirstDue, 12, 1_000_000L, 12_000_000L, now),
                 // Three installments paid, recorded against lines 1-3 so the schedule stays honest.
-                (1..3).map { payable(1, 1_000_000L, day(-90 + (it - 1) * 30), it.toString()) },
+                (1..3).map { payable(1, 1_000_000L, day(-90L + (it - 1) * 30L), it.toString()) },
             ),
             Triple(
                 LoanEntity(

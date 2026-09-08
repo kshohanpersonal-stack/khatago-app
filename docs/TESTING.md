@@ -111,8 +111,8 @@ An offline ledger app fails most often in places a JVM test cannot see. Run this
 
 | Script | Proves |
 |---|---|
-| `check_braces.py` | every Kotlin file's braces/parens/brackets balance after stripping strings and comments |
-| `audit_imports.py` | every project import resolves to a declared top-level name **and** is referenced |
+| `check_braces.py` | braces/parens/brackets balance after stripping strings and comments, **and** every block comment closes (Kotlin comments nest) |
+| `audit_imports.py` | every project import resolves to a declared top-level name and is referenced — and every project or library name a file *uses* is imported by it |
 | `audit_symbols.py` | unqualified constructor calls in `ui/`, `container.*` accessors, `KhataGoIcons.*` members |
 | `audit_data_api.py` | every `database.xxxDao().method()` call site matches a declared DAO method |
 | `check_yaml.py` | the GitHub Actions files are structurally valid YAML (this sandbox has no PyYAML, so a real parser is unavailable) |
@@ -148,3 +148,25 @@ checks every `ProjectType.member` access against the members that type actually 
 quiet about extensions, enum-generated `entries` and unparseable bodies so it never cries wolf.
 Each rule was verified by re-injecting the original defect and confirming a `MISS` line and exit 1 —
 a static check nobody has seen fail is not evidence of anything.
+
+A fourth round found the *shape* of the bug behind 1048 errors, and it was a comment. The KDoc on
+`data/db/entity/Entities.kt` mentioned the generated schema files by glob — `app/schemas/` plus a star
+plus `1.json`. **Kotlin block comments nest**, unlike Java's, so the `*/` that ended the doc comment closed
+only the comment the `*` region had opened: the outer comment ran to end of file, deleted all 18 entity
+declarations, and the compiler's entire complaint was one line — `Unclosed comment` at the last line.
+`check_braces.py` had modelled Java's non-nesting rule and called that tree balanced. It now shares a
+single lexer with the brace check and reports only what Kotlin actually forbids (a comment left open, a
+`*/` with nothing to close) while accepting legitimate nesting; both directions were tested by re-injecting
+the glob and by writing a deliberately nested comment.
+
+The largest family in that round was not a wrong import but a *missing* one: `data/db/KhataGoSeed.kt`
+used `CategoryEntity` and `AppSettingEntity` with no import statements in the file at all (31 errors), and
+several screens reached for `Box`, `RoundedCornerShape`, `BuildConfig` or
+`Icons.AutoMirrored.Outlined.KeyboardArrowRight` the same way. A checker that only judges the imports
+already written cannot see those, so `audit_imports.py` now resolves names forward as well as backward: a
+project type used outside its own package must be imported, and so must any library name this repository
+already imports unambiguously from exactly one package. Dotted access (`Modifier.weight`,
+`ActivityResultContracts.OpenDocument`) is skipped on purpose — that resolves through the receiver, not
+through an import — as are enum entries and `private` top-level declarations, which nobody can import.
+The same discipline as above: each rule was proven by deleting an import that a fix had just added and
+watching the checker report it.
