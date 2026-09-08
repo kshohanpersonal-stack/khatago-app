@@ -11,9 +11,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  issues: write   # a red run files its own diagnostics as an issue — the only failure channel readable
-                  # from networks that block the Actions log/artefact hosts (see ci.yml notes)
+  contents: write   # ONLY so a red run can push its own diagnostics to the `ci-diagnostics` branch.
+                    # The Actions log and artefact hosts are unreachable from some networks (this
+                    # project's development sandbox among them); `git fetch` never is. Nothing else in
+                    # CI writes, and no workflow path pushes to main.
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -119,6 +120,8 @@ jobs:
       # nothing must not be what fails this step.
       - name: Surface the failure (only when tests did not pass)
         if: failure() && steps.tests.outcome == 'failure'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}   # scoped to this run, used only for the diagnostics push
         run: |
           emit() {
             # $1 = label, $2 = regex
@@ -170,15 +173,21 @@ jobs:
               "$GITHUB_WORKSPACE/app/build/tmp"/*.log 2>/dev/null | head -40
             echo '```'
           } > "$diag"
-          # One annotation holding the whole report. Newlines and '%' are encoded, because the
-          # workflow-command parser takes the *first* unencoded ':' after `::` as the payload start and
-          # breaks on raw newlines; a single dense annotation also dodges the 25-annotation cap that
-          # made the previous attempt report "no diagnostics" while silently truncating the rest.
-          body=$(sed -e "s/%/%25/g" -e "s/:/%3A/g" "$diag" | paste -sd '%0A' -)
-          echo "::error title=Khatago build diagnostics::${body}"
-          jq -Rs --arg t "CI: build diagnostics at $(git rev-parse --short HEAD)" '{title: $t, body: .}' < "$diag" |
-            gh api -X POST --input - "repos/$GITHUB_REPOSITORY/issues" 2>/tmp/issue.err ||
-            echo "::error title=issue-file-failed::$(head -c 300 /tmp/issue.err | tr '\n' ' ')"
+          # Publish the report on a throwaway branch. Everything else that could carry a log (the log
+          # host, artefacts, check-run summaries, annotations past 25, workflow permissions for issues)
+          # was either unreadable from a restricted network or silently capped; git is not.
+          git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD > /tmp/rev.txt
+          dest=$(mktemp -d)
+          git -C "$dest" init -q -b ci-diagnostics
+          git -C "$dest" config user.name ci-diagnostics && git -C "$dest" config user.email ci@localhost
+          cp "$diag" "$dest/diagnostics.md"
+          cp /tmp/tests.log "$dest/tests.log" 2>/dev/null || true
+          cp /tmp/rev.txt "$dest/rev.txt"
+          git -C "$dest" add -A && git -C "$dest" commit -qm "diagnostics for $GITHUB_RUN_ID"
+          git -C "$dest" push -q --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            ci-diagnostics:ci-diagnostics \
+            || echo "::error title=diagnostics-push-failed::could not push ci-diagnostics"
           echo "Tests failed; see the annotations on this check run."
 
       - name: Android Lint (report only, does not fail the build)
