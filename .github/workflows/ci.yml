@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: read
+  issues: write   # a red run files its own diagnostics as an issue — the only failure channel readable
+                  # from networks that block the Actions log/artefact hosts (see ci.yml notes)
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -152,12 +154,25 @@ jobs:
           if [ -n "${task:-}" ]; then
             echo "::error file=build,title=failing-task::${task}"
           fi
-          # Kotlin writes the compiler's own diagnostics to a daemon log rather than to Gradle's
-          # stdout, and a re-run would report UP-TO-DATE and print nothing. Read the log directly.
-          for f in $(find /home/runner/.gradle/daemon /home/runner/work -name 'kotlin-daemon-err*' 2>/dev/null | head -3); do
-            grep -hE "^e: |^w: .*unsafe" "$f" 2>/dev/null | head -25 | cut -c1-500 |
-              while IFS= read -r line; do echo "::error file=build,title=kotlin-daemon-log::${line}"; done
-          done
+          # Kotlin's compiler output lands in a daemon log, not in Gradle's stdout, and a re-run would
+          # report UP-TO-DATE and print nothing — so the log is read directly, and the whole diagnosis is
+          # filed as an issue (annotations are capped at 25 per check run and truncate aggressively).
+          diag=/tmp/diagnostics.md
+          {
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo '```'
+            grep -hE "^e: |^w: file" /tmp/tests.log 2>/dev/null | head -40
+            for f in $(find "$HOME/.gradle/daemon" "$GITHUB_WORKSPACE" -type f \( -name 'kotlin-daemon-err*' -o -name 'errors-*.txt' \) 2>/dev/null | head -4); do
+              echo "--- $f"
+              grep -hE "^e: |^w: |error:|Exception|Caused by" "$f" 2>/dev/null | head -40
+            done
+            grep -hE "^e: |error:|unresolved reference:|expecting" \
+              "$GITHUB_WORKSPACE/app/build/tmp"/*.log 2>/dev/null | head -40
+            echo '```'
+          } > "$diag"
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues" \
+            -f title="CI: unit-test failure diagnostics ($(git rev-parse --short HEAD))" \
+            -F body="@$diag" -f labels="bug" >/dev/null || echo "::warning::could not file the diagnostics issue"
           echo "Tests failed; see the annotations on this check run."
 
       - name: Android Lint (report only, does not fail the build)
