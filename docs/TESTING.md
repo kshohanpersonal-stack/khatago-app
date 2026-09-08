@@ -129,3 +129,22 @@ task registration that failed Gradle's *configuration* phase, and a `java.util.B
 Gradle script (where `java` resolves to the plugin extension, not the package). Both are legal Kotlin and
 both were invisible to structural checks, because both are errors about the *build*, not about the source.
 The lesson to keep: these scripts can prove a tree is self-consistent, never that it compiles.
+
+A third family of the same lesson, and the expensive one: two defects that produced
+`e: Could not load module <Error module>` from `:app:kaptGenerateStubsDebugKotlin` and survived many
+CI rounds, because kapt substitutes that single line for the compiler's real diagnostics and the
+checkers were blind to the *shape* of the bug.
+
+- `ui/KhataGoApp.kt` imported three route composables (`InsightsRoute`, `MoreRoute`, `QuickAddRoute`)
+  from the package they used to live in. `MoreRoute` was even imported twice, once correctly.
+- `ui/components/KhataGoFields.kt` called `AppDates.relativeDay(...)`. The object declares
+  `humanDay(...)`, same signature.
+
+Both are ordinary unresolved references, and both are invisible to an import checker that only asks
+"does anything in that package mention this name?" They are now gates, not folklore:
+`tools/audit_imports.py` keeps a strict per-package index of top-level declarations and reports
+"`X` is declared in package `Y`, not `Z`" (plus duplicate imports), and `tools/audit_symbols.py`
+checks every `ProjectType.member` access against the members that type actually declares, staying
+quiet about extensions, enum-generated `entries` and unparseable bodies so it never cries wolf.
+Each rule was verified by re-injecting the original defect and confirming a `MISS` line and exit 1 —
+a static check nobody has seen fail is not evidence of anything.
