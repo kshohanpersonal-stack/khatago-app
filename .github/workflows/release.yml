@@ -31,7 +31,7 @@ jobs:
     name: Assemble, sign (if configured) and publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # A tag dispatch may name a different ref; fetch everything so that is possible.
           fetch-depth: 0
@@ -73,7 +73,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
