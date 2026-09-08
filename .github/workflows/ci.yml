@@ -110,156 +110,107 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
-      - name: Set up the publishing helper
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -uo pipefail
-          mkdir -p /tmp/diag
-          # `git init` (rather than a clone) so every push replaces the branch with exactly what this run
-          # wrote. The push is retried from several steps on purpose: publishing after each probe means a
-          # later step blowing up cannot cost a whole CI round, because the branch already carries the
-          # status line saying which step was last to finish.
-          git init -q /tmp/diag/repo
-          git -C /tmp/diag/repo config user.name ci-diagnostics
-          git -C /tmp/diag/repo config user.email ci@localhost
-          cat > /tmp/diag/push.sh <<'PUSHEOF'
-          #!/usr/bin/env bash
-          set -uo pipefail
-          git -C /tmp/diag/repo add -A >/dev/null 2>&1 || true
-          git -C /tmp/diag/repo commit -qm "diag $GITHUB_RUN_ID" >/dev/null 2>&1 || true
-          git -C /tmp/diag/repo branch -qf ci-diagnostics
-          git -C /tmp/diag/repo push -q --force \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            ci-diagnostics:ci-diagnostics \
-            && echo "published ci-diagnostics ($(git -C /tmp/diag/repo ls-files | wc -l) files)" \
-            || echo "::warning::could not publish ci-diagnostics"
-          PUSHEOF
-          chmod +x /tmp/diag/push.sh
-          echo "probe-step-failure" > /tmp/diag/progress.txt
-          /tmp/diag/push.sh
-
-      # Five explicit steps, never a loop over a task list: the loop body ran Gradle, Gradle read the
-      # loop's own stdin, four of five probes silently never ran, and the report read "no diagnostics
-      # anywhere" - which was a shell bug masquerading as a build result. Each step also publishes its own
-      # status line before the next one starts, so an absent probe is provably absent rather than quiet.
-      - name: Probe 1 - main compile with every kapt* task disabled (stub mode is what hides diagnostics)
+      # ONE step, on purpose. The previous version split the probes across steps and passed state through
+      # /tmp/diag; the published report came back with `progress: probe-step-failure` - i.e. it proved
+      # nothing about the probes, only about which files survived between steps. A run costs several
+      # minutes, and a job that cannot say "probe 2 did not run" wastes it. Everything below therefore
+      # happens in a single shell, every command's status is captured into the report itself, and each
+      # probe writes its own file before the next one starts.
+      #
+      # Five explicit gradle invocations, never a loop over a task list: a `while read ... done < list`
+      # loop whose body runs Gradle has Gradle consume the loop's own stdin, so four of five probes
+      # silently never ran and the report read "no diagnostics anywhere".
+      - name: Probe the compiler four ways and publish what it says
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
-          cat > /tmp/no-kapt.init.gradle.kts <<'INITEOF'
+          d=$GITHUB_WORKSPACE/.diag
+          mkdir -p "$d"
+          cat > "$d/no-kapt.init.gradle.kts" <<'INITEOF'
           gradle.beforeProject {
               tasks.matching { it.name.startsWith("kapt") }.configureEach { enabled = false }
           }
           INITEOF
-          gradle --no-daemon --console=plain --stacktrace -I /tmp/no-kapt.init.gradle.kts \
-            :app:compileDebugKotlin </dev/null >/tmp/diag/p1.log 2>&1
-          rc=$?   # gradle's status, captured before the next command overwrites $?
-          {
-            echo "## Probe 1 - compileDebugKotlin, kapt tasks disabled (exit $rc)"
-            echo '```'
-            grep -hE "^(e: |w: file:)|^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)|Caused by:|Exception is:" /tmp/diag/p1.log | head -40
-            tail -80 /tmp/diag/p1.log
-            echo '```'
-          } > /tmp/diag/p1.md
-          cp /tmp/diag/p1.log /tmp/diag/probe1.txt
-          echo "probe1 done: $(wc -l < /tmp/diag/p1.log 2>/dev/null) lines, $(grep -cE "^(e: |w: file:)" /tmp/diag/p1.log 2>/dev/null) diagnostics" > /tmp/diag/progress.txt
-          /tmp/diag/push.sh
-
-      - name: Probe 2 - unit-test sources with kapt* disabled (least-covered source set)
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -uo pipefail
-          gradle --no-daemon --console=plain --stacktrace -I /tmp/no-kapt.init.gradle.kts \
-            :app:compileDebugUnitTestKotlin </dev/null >/tmp/diag/p2.log 2>&1
-          rc=$?   # gradle's status, captured before the next command overwrites $?
-          {
-            echo "## Probe 2 - compileDebugUnitTestKotlin, kapt tasks disabled (exit $rc)"
-            echo '```'
-            grep -hE "^(e: |w: file:)|^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)|Caused by:|Exception is:" /tmp/diag/p2.log | head -40
-            tail -80 /tmp/diag/p2.log
-            echo '```'
-          } > /tmp/diag/p2.md
-          cp /tmp/diag/p2.log /tmp/diag/probe2.txt
-          echo "probe2 done: $(wc -l < /tmp/diag/p2.log 2>/dev/null) lines, $(grep -cE "^(e: |w: file:)" /tmp/diag/p2.log 2>/dev/null) diagnostics" > /tmp/diag/progress.txt
-          /tmp/diag/push.sh
-
-      - name: Probe 3 - stub task, incremental compilation off (rules the IC state in or out)
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -uo pipefail
-          gradle --no-daemon --console=plain --stacktrace -Pkotlin.incremental=false \
-            -Pkotlin.incremental.useModuleDetection=false :app:kaptGenerateStubsDebugKotlin \
-            </dev/null >/tmp/diag/p3.log 2>&1
-          rc=$?   # gradle's status, captured before the next command overwrites $?
-          {
-            echo "## Probe 3 - stub task, no incremental compilation (exit $rc)"
-            echo '```'
-            grep -hE "^(e: |w: file:)|^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)|Caused by:|Exception is:" /tmp/diag/p3.log | head -40
-            tail -60 /tmp/diag/p3.log
-            echo '```'
-          } > /tmp/diag/p3.md
-          cp /tmp/diag/p3.log /tmp/diag/probe3.txt
-          echo "probe3 done: $(wc -l < /tmp/diag/p3.log 2>/dev/null) lines, $(grep -cE "^(e: |w: file:)" /tmp/diag/p3.log 2>/dev/null) diagnostics" > /tmp/diag/progress.txt
-          /tmp/diag/push.sh
-
-      - name: Probe 4 - stub task without the configuration cache (rules out lazily-computed KGP inputs)
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -uo pipefail
-          gradle --no-daemon --console=plain --stacktrace --no-configuration-cache \
-            :app:kaptGenerateStubsDebugKotlin </dev/null >/tmp/diag/p4.log 2>&1
-          rc=$?   # gradle's status, captured before the next command overwrites $?
-          {
-            echo "## Probe 4 - stub task, no configuration cache (exit $rc)"
-            echo '```'
-            grep -hE "^(e: |w: file:)|^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)|Caused by:|Exception is:" /tmp/diag/p4.log | head -40
-            tail -60 /tmp/diag/p4.log
-            echo '```'
-          } > /tmp/diag/p4.md
-          cp /tmp/diag/p4.log /tmp/diag/probe4.txt
-          echo "probe4 done: $(wc -l < /tmp/diag/p4.log 2>/dev/null) lines, $(grep -cE "^(e: |w: file:)" /tmp/diag/p4.log 2>/dev/null) diagnostics" > /tmp/diag/progress.txt
-          /tmp/diag/push.sh
-
-      - name: Assemble and publish the report
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -uo pipefail
-          dest=/tmp/diag/repo
+          probe() {   # $1 = number, $2 = human label, rest = gradle args
+            local n="$1"; shift
+            local label="$1"; shift
+            echo "--- probe $n: $label"
+            gradle --no-daemon --console=plain --stacktrace "$@" < /dev/null > "$d/p$n.log" 2>&1
+            local rc=$?
+            local lines diag
+            lines=$(grep -c "" "$d/p$n.log" 2>/dev/null || echo 0)
+            diag=$(grep -cE "^(e: |w: file:)" "$d/p$n.log" 2>/dev/null || echo 0)
+            {
+              echo "## Probe $n - $label"
+              echo
+              echo "exit=$rc · log lines=$lines · compiler diagnostics=$diag"
+              echo
+              echo '```'
+              grep -hE "^(e: |w: file:)|^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)|Caused by:|Exception is:" \
+                "$d/p$n.log" 2>/dev/null | head -45
+              echo "--- raw tail"
+              tail -70 "$d/p$n.log" 2>/dev/null
+              echo '```'
+              echo
+            } >> "$d/report.md"
+            echo "probe$n exit=$rc lines=$lines diagnostics=$diag"
+          }
+          : > "$d/report.md"
           {
             echo "# KhataGo compile diagnostics for run $GITHUB_RUN_ID"
             echo
-            echo "Commit: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD) · progress: $(cat /tmp/diag/progress.txt 2>/dev/null)"
+            echo "Commit: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD) · job: $GITHUB_JOB · step ran as one shell."
             echo
-            echo "The line that the build job reports is \`e: Could not load module <Error module>\`. That is"
-            echo "emitted when something resolves to an *error descriptor* (a reference to a type or member"
-            echo "that does not exist) and kapt's stub mode substitutes it for the compiler's real diagnostics."
-            echo "Probe 1 and 2 compile the same sources with the kapt tasks disabled, which is the path that"
-            echo "names a file:line:col. Probes 3 and 4 rule out incremental compilation and the configuration"
-            echo "cache. Read the probe sections first, then the raw tails."
+            echo "The build job's own message is always one line: \`e: Could not load module <Error module>\`."
+            echo "That is emitted when something resolves to an *error descriptor* - a reference to a type or"
+            echo "member that does not exist - and kapt's stub-generation mode substitutes it for the compiler's"
+            echo "real diagnostics, so no file:line ever reaches stdout from a kapt task. Probes 1 and 2 compile"
+            echo "the same sources through the ordinary Kotlin compile task with every kapt* task disabled, which"
+            echo "is the path that prints file:line:col. Probes 3 and 4 rule incremental compilation and the"
+            echo "configuration cache in or out. Nothing here weakens the build: the build job still runs kapt,"
+            echo "Room, the tests and both assemble tasks."
             echo
-            cat /tmp/diag/p1.md 2>/dev/null || echo "_probe 1 produced nothing_"
-            echo
-            cat /tmp/diag/p2.md 2>/dev/null || echo "_probe 2 produced nothing_"
-            echo
-            cat /tmp/diag/p3.md 2>/dev/null || echo "_probe 3 produced nothing_"
-            echo
-            cat /tmp/diag/p4.md 2>/dev/null || echo "_probe 4 produced nothing_"
-          } > "$dest/kapt-disabled.md"
-          cp /tmp/tests.log "$dest/tests.log" 2>/dev/null || true
-          echo "The real \`e:\` lines are at the top of kapt-disabled.md; probe1.txt is the kapt-less main" > "$dest/README.txt"
-          echo "compile verbatim." >> "$dest/README.txt"
-          /tmp/diag/push.sh
+          } >> "$d/report.md"
+          probe 1 "compileDebugKotlin with kapt tasks disabled" -I "$d/no-kapt.init.gradle.kts" :app:compileDebugKotlin
+          probe 2 "compileDebugUnitTestKotlin with kapt tasks disabled" -I "$d/no-kapt.init.gradle.kts" :app:compileDebugUnitTestKotlin
+          probe 3 "stub task with incremental compilation off" -Pkotlin.incremental=false -Pkotlin.incremental.useModuleDetection=false :app:kaptGenerateStubsDebugKotlin
+          probe 4 "stub task without the configuration cache" --no-configuration-cache :app:kaptGenerateStubsDebugKotlin
+          echo "all probes finished" >> "$d/report.md"
+          cp /tmp/tests.log "$d/tests.log" 2>/dev/null || echo "no tests.log" > "$d/tests.log"
+          # Publish: a throwaway `git init` whose branch replaces ci-diagnostics wholesale, plus a copy of
+          # the report into the step summary so a second channel exists even when the push itself is the
+          # thing that failed.
+          r="$d/repo"
+          git init -q "$r"
+          git -C "$r" config user.name ci-diagnostics
+          git -C "$r" config user.email ci@localhost
+          cp "$d/report.md" "$r/kapt-disabled.md"
+          for n in 1 2 3 4; do cp "$d/p$n.log" "$r/probe$n.txt" 2>/dev/null || true; done
+          cp "$d/tests.log" "$r/tests.log" 2>/dev/null || true
+          git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD > "$r/rev.txt" 2>/dev/null || true
+          git -C "$r" add -A
+          git -C "$r" commit -qm "diag $GITHUB_RUN_ID"
+          echo "commit=$(git -C "$r" rev-parse --short HEAD) files=$(git -C "$r" ls-files | tr '\n' ' ')"
+          git -C "$r" push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/ci-diagnostics && echo "PUBLISHED" || echo "::warning::push failed"
+          cat "$d/report.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          echo "done"
+
+      - name: Confirm what landed on the diagnostics branch
+        if: always()
+        run: |
+          set -uo pipefail
+          # Prints the truth about the run into the (browser-readable) log even if the push above failed:
+          # exit statuses are one line per probe, so "probe 2 did not run" can never be misread as
+          # "probe 2 found nothing".
+          for f in $GITHUB_WORKSPACE/.diag/p*.log; do
+            [ -e "$f" ] || { echo "no probe logs at all - the probe step did not reach its gradle calls"; break; }
+            echo "$(basename "$f"): $(grep -c "" "$f") lines, $(grep -cE '^(e: |w: file:)' "$f") diagnostics"
+            grep -E "^(e: |w: file:)" "$f" | head -12
+          done
+          exit 0
 
   # --------------------------------------------------------------------------- build + test
   build:

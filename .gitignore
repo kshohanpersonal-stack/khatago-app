@@ -20,3 +20,6 @@ __pycache__/
 *.pyc
 # Local, non-production demo scratch
 /scratch/
+# Written by ci.yml's diagnose job inside the workspace, so the four probe logs survive to the push
+# step in a red run. Never a build input, never committed.
+/.diag/
