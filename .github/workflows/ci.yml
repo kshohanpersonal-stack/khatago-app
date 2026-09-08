@@ -170,9 +170,15 @@ jobs:
               "$GITHUB_WORKSPACE/app/build/tmp"/*.log 2>/dev/null | head -40
             echo '```'
           } > "$diag"
+          # One annotation holding the whole report. Newlines and '%' are encoded, because the
+          # workflow-command parser takes the *first* unencoded ':' after `::` as the payload start and
+          # breaks on raw newlines; a single dense annotation also dodges the 25-annotation cap that
+          # made the previous attempt report "no diagnostics" while silently truncating the rest.
+          body=$(sed -e "s/%/%25/g" -e "s/:/%3A/g" "$diag" | paste -sd '%0A' -)
+          echo "::error title=Khatago build diagnostics::${body}"
           jq -Rs --arg t "CI: build diagnostics at $(git rev-parse --short HEAD)" '{title: $t, body: .}' < "$diag" |
-            gh api -X POST --input - "repos/$GITHUB_REPOSITORY/issues" >/dev/null 2>&1 ||
-            echo "::warning::could not file the diagnostics issue (workflow permissions?)"
+            gh api -X POST --input - "repos/$GITHUB_REPOSITORY/issues" 2>/tmp/issue.err ||
+            echo "::error title=issue-file-failed::$(head -c 300 /tmp/issue.err | tr '\n' ' ')"
           echo "Tests failed; see the annotations on this check run."
 
       - name: Android Lint (report only, does not fail the build)
