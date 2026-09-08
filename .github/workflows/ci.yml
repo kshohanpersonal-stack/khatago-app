@@ -185,6 +185,10 @@ jobs:
             echo '```'
             echo
           } >> "$d/report.md"
+          # Publish once before any long-running work: a report that says "gradle: MISSING" with four
+          # empty probe sections is worth more than a perfect report whose step died before pushing.
+          echo "probes starting" > "$d/status.txt"
+          "$d/publish.sh" || echo "early publish failed"
           for spec in \
             "1|compileDebugKotlin, kapt tasks disabled|-I $d/no-kapt.init.gradle.kts|:app:compileDebugKotlin" \
             "2|compileDebugUnitTestKotlin, kapt tasks disabled|-I $d/no-kapt.init.gradle.kts|:app:compileDebugUnitTestKotlin" \
@@ -242,9 +246,26 @@ jobs:
           else
             { echo "## status"; echo; echo '```'; cat "$d/status.txt" 2>/dev/null; tail -40 "$d/trace.txt" 2>/dev/null; echo '```'; } >> "$d/report.md"
           fi
-          "$d/publish.sh"
+          if ! "$d/publish.sh"; then
+            # The helper is written by an earlier step. If it is absent, unreadable or itself broken, the
+            # fallback below publishes the same bytes with no shared state. Silence here is what cost the
+            # last three rounds: a diagnose job that fails *and* publishes nothing is worse than one that
+            # publishes a half-truth.
+            echo "::warning::publish.sh failed - using the inline fallback"
+            r=$(mktemp -d)
+            git init -q "$r"
+            git -C "$r" config user.name ci-diagnostics
+            git -C "$r" config user.email ci@localhost
+            cp "$d"/* "$r"/ 2>/dev/null || true
+            git -C "$r" add -A
+            git -C "$r" commit -qm "diag fallback $GITHUB_RUN_ID"
+            git -C "$r" push -q --force \
+              "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+              HEAD:refs/heads/ci-diagnostics && echo "PUBLISHED via fallback" || echo "::error::both publishers failed"
+          fi
 
 
+  # --------------------------------------------------------------------------- build + test
   build:
     name: Test, lint and assemble
     runs-on: ubuntu-latest

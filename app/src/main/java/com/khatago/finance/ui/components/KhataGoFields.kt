@@ -350,7 +350,7 @@ fun DateField(
                 color = if (epochDay == null) KhataGoColors.Ink400 else MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = epochDay?.let { AppDates.relativeDay(it, context.todayEpochDay) } ?: "",
+                text = epochDay?.let { AppDates.humanDay(it, context.todayEpochDay) } ?: "",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.CenterEnd),

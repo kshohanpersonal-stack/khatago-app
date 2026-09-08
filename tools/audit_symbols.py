@@ -15,6 +15,9 @@ What it checks
 3. Every `container.<something>` and `app.<something>` access in `ui/**` — is that property declared on
    `AppContainer`? (The app's object graph is small enough to enumerate, and a typo'd accessor is a
    guaranteed compile error.)
+4. Every `ProjectType.member` access where `ProjectType` is a class/object this project declares — does it
+   have that member? (`AppDates.relativeDay` was written against an object whose function is called
+   `humanDay`; the import checker cannot see it, because the *type* imports fine.)
 
 What it does **not** check: types, arity, nullability, overloads, generics, or anything at all about
 correctness. `./gradlew build` still has to happen; this only removes whole classes of avoidable
@@ -185,6 +188,14 @@ def strip_strings(text: str) -> str:
 TRIPLE = chr(34) * 3
 
 
+def rel(path: Path) -> str:
+    """Repo-relative path, tolerant of relative argv roots (other checkers take `app/src`, not an absolute path)."""
+    try:
+        return str(path.resolve().relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
 def main() -> int:
     src_root = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'app' / 'src' / 'main' / 'java'
     files = sorted(src_root.rglob('*.kt'))
@@ -228,13 +239,13 @@ def main() -> int:
                 # class (BuildConfig) or a top-level member of another file in this package — both valid.
                 if (ROOT / 'app' / 'src' / 'main' / 'java' / fqn.replace('.', '/')).with_suffix('.kt').exists():
                     continue
-                problems.append(f'{f.relative_to(ROOT)}: import {fqn} resolves to nothing')
+                problems.append(f'{rel(f)}: import {fqn} resolves to nothing')
                 continue
             if member:
                 if member not in members[target] and member not in by_fqn.get(f'{fqn}.{member}', target) :
                     if f'{fqn}.{member}' not in by_fqn and member not in members[target]:
                         problems.append(
-                            f'{f.relative_to(ROOT)}: imported symbol {fqn}.{member} is not declared in '
+                            f'{rel(f)}: imported symbol {fqn}.{member} is not declared in '
                             f'{target.relative_to(ROOT)}',
                         )
 
@@ -272,10 +283,10 @@ def main() -> int:
                 if my_pkg and my_pkg.group(1) == owner_pkg:
                     continue
                 problems.append(
-                    f'{f.relative_to(ROOT)}: uses {name}() with no import (declared in {owner_pkg})',
+                    f'{rel(f)}: uses {name}() with no import (declared in {owner_pkg})',
                 )
                 continue
-            problems.append(f'{f.relative_to(ROOT)}: {name}() is not declared anywhere in the project')
+            problems.append(f'{rel(f)}: {name}() is not declared anywhere in the project')
 
     # 3. container accessors
     app_container = ROOT / 'app' / 'src' / 'main' / 'java' / 'com' / 'khatago' / 'finance' / 'AppContainer.kt'
@@ -289,14 +300,67 @@ def main() -> int:
                 continue
             if acc in container_members or acc in known_shared:
                 continue
-            problems.append(f'{f.relative_to(ROOT)}: container.{acc} is not a member of AppContainer')
+            problems.append(f'{rel(f)}: container.{acc} is not a member of AppContainer')
+
+    # 4. qualified member access on a type this project declares: `AppDates.relativeDay(...)` when AppDates
+    #    has no such function. This is the shape that cost the most CI rounds — an unresolved reference makes
+    #    kapt print `e: Could not load module <Error module>` with no file and no line, and the import
+    #    checkers above cannot see it because the *type* is imported correctly and only the *member* is wrong.
+    #    Deliberately conservative: a name is only flagged when it appears nowhere in the repository as a
+    #    declaration, so extension functions, companion members and generated `entries`/`serializer` are
+    #    never reported, and an unparseable type (empty member set) is skipped rather than guessed about.
+    any_declared: set[str] = set()
+    types_members: dict[str, set[str]] = {}
+    for f in files:
+        text = f.read_text(encoding='utf-8')
+        code = strip_strings(COMMENTS.sub(' ', text))
+        # `fun Foo.bar()` / `val Foo.baz` declare a member *of the receiver*, not a function named `Foo`,
+        # so the extension reading has to come first or every extension looks like a member of its own
+        # receiver type (and every legitimate `Foo.bar` call is then reported as missing).
+        for name in re.findall(
+            r'\b(?:fun|val|var|const val)\s+(?:<[^>]+>\s*)?(?:[A-Za-z_]\w*\.)?([A-Za-z_]\w*)', code
+        ):
+            any_declared.add(name)
+        for name in re.findall(r'\b(?:fun|val|var)\s+[A-Za-z_]\w*\.([A-Za-z_]\w*)', code):
+            any_declared.add(name)
+        for t in re.finditer(
+            r'^\s*(?:@\w+\s*)*(?:public |internal |private |abstract |open |sealed |data |value |enum |annotation )*'
+            r'(?:class|interface|object)\s+([A-Z]\w*)[^\n]*\{', code, re.M,
+        ):
+            name = t.group(1)
+            i, depth, j = t.end(), 1, t.end()
+            while j < len(code) and depth:
+                if code[j] == '{':
+                    depth += 1
+                elif code[j] == '}':
+                    depth -= 1
+                j += 1
+            body = code[i:j]
+            found = set(re.findall(r'(?:val|var|fun)\s+(?:<[^>]+>\s*)?([A-Za-z_]\w*)', body))
+            found |= set(re.findall(r'^\s{4,}([A-Z][A-Z0-9_]{1,})\b', body, re.M))  # enum entries
+            if re.search(r'enum class\s+' + name + r'\b', code):
+                # every enum gets these from java.lang.Enum, and `values()` from the generated companion
+                found |= {'entries', 'values', 'valueOf', 'name', 'ordinal'}
+            types_members.setdefault(name, set()).update(found)
+    QUALIFIED = re.compile(r'(?<![\w.$])([A-Z]\w*)\.([a-z_]\w*)\b')
+    for f in files:
+        code = strip_strings(COMMENTS.sub(' ', f.read_text(encoding='utf-8')))
+        for m in QUALIFIED.finditer(code):
+            t, member = m.group(1), m.group(2)
+            members_of = types_members.get(t)
+            if not members_of:
+                continue                      # no parseable body: nothing to conclude
+            if member in members_of or member in any_declared:
+                continue                      # real member, or an extension/prop somewhere in the app
+            problems.append(f'{rel(f)}: {t}.{member} — {t} declares no such member')
 
     if problems:
         for p in sorted(set(problems)):
             print('MISS', p)
         print(f'{len(set(problems))} problem(s) — symbol-resolution check only')
         return 1
-    print(f'OK: {len(files)} file(s); every project import, ui call and container accessor resolves')
+    print(f'OK: {len(files)} file(s); every project import, ui call, container accessor and '
+          'qualified member access resolves')
     return 0
 
 
