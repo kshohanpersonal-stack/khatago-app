@@ -137,6 +137,9 @@ jobs:
           emit "task-failed" "^> Task .*FAILED"
           emit "what-went-wrong" "What went wrong|Caused by:"
           emit "unresolved" "unresolved reference:|expecting"
+          # The compiler sometimes reports through a worker whose output Gradle re-prefixes, so a
+          # "^e:" anchor alone misses lines. Anything that smells like a diagnostic is fair game.
+          emit "diagnostic" "error:|warning:|unresolved|expecting|Overload resolution|Type mismatch|No value passed|cannot be applied|None of the following"
           emit "kapt" "kapt|Kapt|NonExistentClass"
           echo "Tests failed; see the annotations on this check run."
 
