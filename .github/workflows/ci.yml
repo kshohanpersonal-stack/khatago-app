@@ -118,6 +118,26 @@ jobs:
       # run repeats itself as *annotations*, which the checks API does serve: the ten most diagnostic
       # lines, plus every unresolved reference. Deliberately no `pipefail` here — a grep that finds
       # nothing must not be what fails this step.
+      # A kapt failure can print nothing but "Could not load module <Error module>" — the real compiler
+      # diagnostics are then only in the verbose log. This step re-runs the two compile paths with
+      # --info/--console=plain and greps hard, so the next CI run says which line is wrong, not just
+      # which task was. It is quiet and cheap on a green build (it does not run at all then).
+      - name: Probe the compiler for the real error
+        if: failure() && steps.tests.outcome == 'failure'
+        run: |
+          set -uo pipefail
+          out=/tmp/probe.txt
+          {
+            echo "### compileDebugKotlin (no kapt), --info"
+            gradle --no-daemon --console=plain :app:compileDebugKotlin --info 2>&1 |
+              grep -E "^e: |^w: file|error:|Caused by" | head -40
+            echo "### kaptGenerateStubsDebugKotlin --info"
+            gradle --no-daemon --console=plain :app:kaptGenerateStubsDebugKotlin --info 2>&1 |
+              grep -E "^e: |^w: file|error:|Caused by|Exception: |warning: " | head -40
+          } > "$out" 2>&1 || true
+          cat "$out"
+          cp "$out" /tmp/diagnostics-probe.txt || true
+
       - name: Surface the failure (only when tests did not pass)
         if: failure() && steps.tests.outcome == 'failure'
         env:
@@ -165,6 +185,8 @@ jobs:
             echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo '```'
             grep -hE "^e: |^w: file" /tmp/tests.log 2>/dev/null | head -40
+            echo "--- probe"
+            cat /tmp/diagnostics-probe.txt 2>/dev/null | head -80
             for f in $(find "$HOME/.gradle/daemon" "$GITHUB_WORKSPACE" -type f \( -name 'kotlin-daemon-err*' -o -name 'errors-*.txt' \) 2>/dev/null | head -4); do
               echo "--- $f"
               grep -hE "^e: |^w: |error:|Exception|Caused by" "$f" 2>/dev/null | head -40
