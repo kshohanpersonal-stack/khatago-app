@@ -35,15 +35,20 @@ class SearchRepository(private val database: KhataGoDatabase) {
     private fun List<SearchRow>.grouped(): List<SearchGroup> =
         groupBy { it.typeKey }
             .entries
-            .sortedBy { (key, _) }
-            .map { (key, rows) ->
+            .sortedBy { entry -> entry.key }
+            .map { entry ->
+                val key = entry.key
+                val rows = entry.value
                 SearchGroup(
                     typeKey = key,
                     label = labelOf(key),
-                    items = rows.map { it.toHit() }.sortedWith(
-                        compareByDescending<SearchRow> { it.amountMinor }
-                            .thenBy { it.title.lowercase() },
-                    ).take(PER_GROUP_LIMIT),
+                    items = rows
+                        .map { it.toHit() }
+                        .sortedWith(
+                            compareByDescending<SearchHit> { hit -> hit.amountMinor }
+                                .thenBy { hit -> hit.title.lowercase() },
+                        )
+                        .take(PER_GROUP_LIMIT),
                 )
             }
 

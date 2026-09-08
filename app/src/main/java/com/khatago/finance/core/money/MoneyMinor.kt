@@ -122,7 +122,7 @@ data class MoneyMinor(val minor: Long) : Comparable<MoneyMinor> {
                 return null
             }
             if (scaled > MAX_MINOR_VALUE) return null
-            return MoneyMinor(scaled.toLongExact())
+            return MoneyMinor(scaled.longValueExact())
         }
 
     }

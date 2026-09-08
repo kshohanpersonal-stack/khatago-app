@@ -460,7 +460,7 @@ fun PersonFormRoute(
                 value = amountText,
                 onValueChange = { amountText = it },
                 context = FieldContext(currency, today),
-                label = if (direction == "borrowing") "You received" : "You gave",
+                label = if (direction == "borrowing") "You received" else "You gave",
             )
             DateField(epochDay = date, onEpochDayChange = { date = it ?: today }, label = "Date", context = FieldContext(currency, today))
             DateField(
@@ -583,7 +583,7 @@ fun TransactionFormRoute(
                 value = amountText,
                 onValueChange = { amountText = it },
                 context = FieldContext(currency, today),
-                label = if (isIncome) "Amount received" : "Amount spent",
+                label = if (isIncome) "Amount received" else "Amount spent",
             )
             DropdownField(
                 options = categories,
@@ -604,8 +604,8 @@ fun TransactionFormRoute(
             TextFieldLine(
                 value = counterparty,
                 onValueChange = { counterparty = it },
-                label = if (isIncome) "Source" : "Merchant",
-                placeholder = if (isIncome) "Salary, rice sold…" : "Shop name, rickshaw fare…",
+                label = if (isIncome) "Source" else "Merchant",
+                placeholder = if (isIncome) "Salary, rice sold…" else "Shop name, rickshaw fare…",
             )
             DateField(
                 epochDay = date,

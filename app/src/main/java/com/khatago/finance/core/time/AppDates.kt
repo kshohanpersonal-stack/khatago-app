@@ -79,9 +79,11 @@ object AppDates {
     }
 
     /** Inclusive month bounds as epoch days, used for "this month" queries. */
-    fun monthRange(year: Int, month: Month): LongRange =
-        LocalDate.of(year, month, 1).toEpochDay()..LocalDate.of(year, month, month.length(isLeap(year)), 1)
-            .let { it.minusDays(1).toEpochDay() }
+    fun monthRange(year: Int, month: Month): LongRange {
+        val first = LocalDate.of(year, month, 1)
+        val last = first.withDayOfMonth(month.length(isLeap(year)))
+        return first.toEpochDay()..last.toEpochDay()
+    }
 
     fun isLeap(year: Int): Boolean = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 

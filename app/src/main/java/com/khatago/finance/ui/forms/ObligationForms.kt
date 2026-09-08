@@ -203,7 +203,7 @@ private fun ObligationForm(
     }
 
     FormScaffold(title = title, onBack = onDone) {
-        FormSection(title = if (isLoan) "The loan" : "The purchase") {
+        FormSection(title = if (isLoan) "The loan" else "The purchase") {
             if (isLoan) {
                 TextFieldLine(
                     value = institution,

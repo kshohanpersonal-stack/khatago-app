@@ -274,67 +274,72 @@ class PayableResolver(private val database: KhataGoDatabase) {
             resolveOnce(payableType, payableId)?.let { emit(it) }
         }
 
-    suspend fun resolve(payableType: PayableType, payableId: Long): ObligationSnapshot? = when (payableType) {
-        PayableType.ShopCredit -> {
-            val credit = database.creditDao().findById(payableId) ?: return null
-            ObligationSnapshot(
-                originalMinor = credit.totalAmountMinor,
-                recordedPaidMinor = database.creditDao().paidTotal(payableId),
-                dueDateEpochDay = credit.dueDateEpochDay,
-                cancelled = credit.cancelled,
-                title = credit.productName,
-                subtitle = "shop credit",
-            )
-        }
+    suspend fun resolve(payableType: PayableType, payableId: Long): ObligationSnapshot? {
+        // A block body, not `= when (…)`: each branch short-circuits with `?: return null` when the row
+        // is gone (deleted under the user, or a stale deep link), and `return` is not legal inside an
+        // expression body. "No obligation to pay" is a value here, never a crash.
+        return when (payableType) {
+            PayableType.ShopCredit -> {
+                val credit = database.creditDao().findById(payableId) ?: return null
+                ObligationSnapshot(
+                    originalMinor = credit.totalAmountMinor,
+                    recordedPaidMinor = database.creditDao().paidTotal(payableId),
+                    dueDateEpochDay = credit.dueDateEpochDay,
+                    cancelled = credit.cancelled,
+                    title = credit.productName,
+                    subtitle = "shop credit",
+                )
+            }
 
-        PayableType.Loan -> {
-            val loan = database.loanDao().findById(payableId) ?: return null
-            ObligationSnapshot(
-                originalMinor = loan.totalPayableMinor + loan.downPaymentMinor,
-                recordedPaidMinor = loan.downPaymentMinor +
-                    database.paymentDao().paidTotal("loan", payableId),
-                dueDateEpochDay = null,
-                cancelled = loan.cancelled,
-                title = loan.loanName,
-                subtitle = loan.institution,
-            )
-        }
+            PayableType.Loan -> {
+                val loan = database.loanDao().findById(payableId) ?: return null
+                ObligationSnapshot(
+                    originalMinor = loan.totalPayableMinor + loan.downPaymentMinor,
+                    recordedPaidMinor = loan.downPaymentMinor +
+                        database.paymentDao().paidTotal("loan", payableId),
+                    dueDateEpochDay = null,
+                    cancelled = loan.cancelled,
+                    title = loan.loanName,
+                    subtitle = loan.institution,
+                )
+            }
 
-        PayableType.Emi -> {
-            val emi = database.emiDao().findById(payableId) ?: return null
-            ObligationSnapshot(
-                originalMinor = emi.totalPayableMinor,
-                recordedPaidMinor = emi.downPaymentMinor +
-                    database.paymentDao().paidTotal("emi", payableId),
-                dueDateEpochDay = null,
-                cancelled = emi.cancelled,
-                title = emi.productName,
-                subtitle = emi.merchant,
-            )
-        }
+            PayableType.Emi -> {
+                val emi = database.emiDao().findById(payableId) ?: return null
+                ObligationSnapshot(
+                    originalMinor = emi.totalPayableMinor,
+                    recordedPaidMinor = emi.downPaymentMinor +
+                        database.paymentDao().paidTotal("emi", payableId),
+                    dueDateEpochDay = null,
+                    cancelled = emi.cancelled,
+                    title = emi.productName,
+                    subtitle = emi.merchant,
+                )
+            }
 
-        PayableType.Borrowing -> {
-            val borrowing = database.personDao().findBorrowing(payableId) ?: return null
-            ObligationSnapshot(
-                originalMinor = borrowing.amountMinor,
-                recordedPaidMinor = database.paymentDao().paidTotal("borrowing", payableId),
-                dueDateEpochDay = borrowing.dueDateEpochDay,
-                cancelled = borrowing.cancelled,
-                title = "Borrowed",
-                subtitle = "from a person",
-            )
-        }
+            PayableType.Borrowing -> {
+                val borrowing = database.personDao().findBorrowing(payableId) ?: return null
+                ObligationSnapshot(
+                    originalMinor = borrowing.amountMinor,
+                    recordedPaidMinor = database.paymentDao().paidTotal("borrowing", payableId),
+                    dueDateEpochDay = borrowing.dueDateEpochDay,
+                    cancelled = borrowing.cancelled,
+                    title = "Borrowed",
+                    subtitle = "from a person",
+                )
+            }
 
-        PayableType.Lending -> {
-            val lending = database.personDao().findLending(payableId) ?: return null
-            ObligationSnapshot(
-                originalMinor = lending.amountMinor,
-                recordedPaidMinor = database.paymentDao().paidTotal("lending", payableId),
-                dueDateEpochDay = lending.dueDateEpochDay,
-                cancelled = lending.cancelled,
-                title = "Lent",
-                subtitle = "to a person",
-            )
+            PayableType.Lending -> {
+                val lending = database.personDao().findLending(payableId) ?: return null
+                ObligationSnapshot(
+                    originalMinor = lending.amountMinor,
+                    recordedPaidMinor = database.paymentDao().paidTotal("lending", payableId),
+                    dueDateEpochDay = lending.dueDateEpochDay,
+                    cancelled = lending.cancelled,
+                    title = "Lent",
+                    subtitle = "to a person",
+                )
+            }
         }
     }
 }

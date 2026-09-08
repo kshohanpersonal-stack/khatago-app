@@ -344,6 +344,8 @@ private data class RestorePreview(
     val recordCount: Int,
     val warnings: List<String>,
     val dropped: Int,
+    /** Kept so the confirm dialog can hand the *same* validated document to the importer. */
+    val document: BackupDocument,
 )
 
 @Composable

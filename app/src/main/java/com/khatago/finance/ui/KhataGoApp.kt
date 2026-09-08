@@ -235,12 +235,12 @@ fun KhataGoApp(
                 DashboardRoute(
                     container = container,
                     onOpenRecord = { type, id -> navController.navigate(Routes.recordDetail(type, id)) },
-                    onQuickAdd = { navController.navigate(Routes.QUICK_ADD) },
-                    onOpenPayments = { navController.navigate(Routes.PAYMENTS) },
-                    onOpenAnalytics = { navController.navigate(Routes.ANALYTICS) },
-                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                    onOpenOnboarding = { navController.navigate(Routes.ONBOARDING) },
+                    onQuickAdd = { navController.navigate(Routes.QUICK_ADD); Unit },
+                    onOpenPayments = { navController.navigate(Routes.PAYMENTS); Unit },
+                    onOpenAnalytics = { navController.navigate(Routes.ANALYTICS); Unit },
+                    onOpenSearch = { navController.navigate(Routes.SEARCH); Unit },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS); Unit },
+                    onOpenOnboarding = { navController.navigate(Routes.ONBOARDING); Unit },
                 )
             }
             composable(
@@ -258,7 +258,7 @@ fun KhataGoApp(
                     initialModule = entry.arguments?.getString(Routes.ARG_MODULE),
                     initialFilter = entry.arguments?.getString(Routes.ARG_FILTER),
                     onOpenRecord = { type, id -> navController.navigate(Routes.recordDetail(type, id)) },
-                    onAdd = { route -> navController.navigate(route) },
+                    onAdd = { route -> navController.navigate(route); Unit },
                     onPay = { type, id -> navController.navigate(Routes.payment(type, id)) },
                 )
             }
@@ -272,21 +272,21 @@ fun KhataGoApp(
             composable(Routes.ANALYTICS) {
                 AnalyticsRoute(
                     container = container,
-                    onOpenInsights = { navController.navigate(Routes.INSIGHTS) },
-                    onOpenReports = { navController.navigate(Routes.REPORTS) },
+                    onOpenInsights = { navController.navigate(Routes.INSIGHTS); Unit },
+                    onOpenReports = { navController.navigate(Routes.REPORTS); Unit },
                 )
             }
             composable(Routes.MORE) {
                 MoreRoute(
                     container = container,
-                    onOpen = { route -> navController.navigate(route) },
-                    onOpenRecords = { module -> navController.navigate(Routes.records(module)) },
+                    onOpen = { route -> navController.navigate(route); Unit },
+                    onOpenRecords = { module -> navController.navigate(Routes.records(module)); Unit },
                 )
             }
             composable(Routes.QUICK_ADD) {
                 QuickAddRoute(
                     container = container,
-                    onDismiss = { navController.popBackStack() },
+                    onDismiss = { navController.popBackStack(); Unit },
                     onNavigate = { route ->
                         navController.popBackStack()
                         navController.navigate(route)
@@ -297,7 +297,7 @@ fun KhataGoApp(
                 SearchRoute(
                     container = container,
                     onOpenRecord = { type, id -> navController.navigate(Routes.recordDetail(type, id)) },
-                    onDismiss = { navController.popBackStack() },
+                    onDismiss = { navController.popBackStack(); Unit },
                 )
             }
             composable(
@@ -327,7 +327,7 @@ fun KhataGoApp(
                     container = container,
                     type = entry.arguments?.getString(Routes.ARG_TYPE).orEmpty(),
                     id = entry.arguments?.getLong(Routes.ARG_ID) ?: 0L,
-                    onDismiss = { navController.popBackStack() },
+                    onDismiss = { navController.popBackStack(); Unit },
                 )
             }
             composable(
@@ -337,7 +337,7 @@ fun KhataGoApp(
                 ShopFormRoute(
                     container = container,
                     editId = entry.positiveId(Routes.ARG_EDIT_ID),
-                    onDone = { navController.popBackStack() },
+                    onDone = { navController.popBackStack(); Unit },
                 )
             }
             composable(
@@ -348,7 +348,7 @@ fun KhataGoApp(
                     container = container,
                     preselectedShopId = entry.positiveId(Routes.ARG_SHOP_ID),
                     creditId = entry.positiveId(Routes.ARG_EDIT_ID),
-                    onDone = { navController.popBackStack() },
+                    onDone = { navController.popBackStack(); Unit },
                 )
             }
             composable(
@@ -358,7 +358,7 @@ fun KhataGoApp(
                 LoanFormRoute(
                     container = container,
                     editId = entry.positiveId(Routes.ARG_EDIT_ID),
-                    onDone = { navController.popBackStack() },
+                    onDone = { navController.popBackStack(); Unit },
                 )
             }
             composable(
@@ -368,7 +368,7 @@ fun KhataGoApp(
                 EmiFormRoute(
                     container = container,
                     editId = entry.positiveId(Routes.ARG_EDIT_ID),
-                    onDone = { navController.popBackStack() },
+                    onDone = { navController.popBackStack(); Unit },
                 )
             }
             composable(
@@ -384,47 +384,51 @@ fun KhataGoApp(
                 PersonFormRoute(
                     container = container,
                     initialDirection = entry.arguments?.getString(Routes.ARG_DIRECTION),
-                    onDone = { navController.popBackStack() },
+                    onDone = { navController.popBackStack(); Unit },
                 )
             }
             composable(Routes.INCOME_FORM) {
                 TransactionFormRoute(
                     container = container,
                     kind = "income",
-                    onDone = { navController.popBackStack() },
+                    onDone = { navController.popBackStack(); Unit },
                 )
             }
             composable(Routes.EXPENSE_FORM) {
                 TransactionFormRoute(
                     container = container,
                     kind = "expense",
-                    onDone = { navController.popBackStack() },
+                    onDone = { navController.popBackStack(); Unit },
                 )
             }
             composable(Routes.INSIGHTS) {
-                InsightsRoute(container = container, onBack = { navController.popBackStack() })
+                InsightsRoute(container = container, onBack = { navController.popBackStack(); Unit })
             }
             composable(Routes.REPORTS) {
-                ReportsRoute(container = container, onBack = { navController.popBackStack() })
+                ReportsRoute(container = container, onBack = { navController.popBackStack(); Unit })
             }
             composable(Routes.BACKUP) {
-                BackupRestoreRoute(container = container, onBack = { navController.popBackStack() })
+                BackupRestoreRoute(container = container, onBack = { navController.popBackStack(); Unit })
             }
             composable(Routes.SETTINGS) {
                 SettingsRoute(
                     container = container,
-                    onBack = { navController.popBackStack() },
-                    onOpen = { route -> navController.navigate(route) },
+                    onBack = { navController.popBackStack(); Unit },
+                    onOpen = { route -> navController.navigate(route); Unit },
                 )
             }
             composable(Routes.SETTINGS_SECURITY) {
-                SecurityRoute(container = container, onBack = { navController.popBackStack() })
+                SecurityRoute(container = container, onBack = { navController.popBackStack(); Unit })
             }
             composable(Routes.SETTINGS_DATA) {
-                DataManagementRoute(container = container, onBack = { navController.popBackStack() })
+                DataManagementRoute(
+                    container = container,
+                    onBack = { navController.popBackStack(); Unit },
+                    onOpen = { route -> navController.navigate(route); Unit },
+                )
             }
             composable(Routes.ABOUT) {
-                AboutRoute(container = container, onBack = { navController.popBackStack() })
+                AboutRoute(container = container, onBack = { navController.popBackStack(); Unit })
             }
             composable(Routes.ONBOARDING) {
                 OnboardingRoute(
@@ -451,24 +455,24 @@ private fun RecordDetailDispatcher(
     type: String,
     id: Long,
 ) {
-    val back = { navController.popBackStack() }
-    val pay = { navController.navigate(Routes.payment(type, id)) }
+    val back = { navController.popBackStack(); Unit }
+    val pay = { navController.navigate(Routes.payment(type, id)); Unit }
     when (type) {
         "shop" -> ShopDetailRoute(
             container = container,
             shopId = id,
             onBack = back,
-            onOpenCredit = { creditId -> navController.navigate(Routes.recordDetail("shop_credit", creditId)) },
-            onAddCredit = { navController.navigate(Routes.creditForm(id)) },
+            onOpenCredit = { creditId -> navController.navigate(Routes.recordDetail("shop_credit", creditId)); Unit },
+            onAddCredit = { navController.navigate(Routes.creditForm(id)); Unit },
             onPay = pay,
-            onEdit = { navController.navigate(Routes.shopForm(id)) },
+            onEdit = { navController.navigate(Routes.shopForm(id)); Unit },
         )
         "shop_credit" -> CreditDetailRoute(
             container = container,
             creditId = id,
             onBack = back,
             onPay = pay,
-            onEdit = { navController.navigate(Routes.CREDIT_FORM) },
+            onEdit = { navController.navigate(Routes.CREDIT_FORM); Unit },
         )
         "loan" -> LoanDetailRoute(
             container = container,
@@ -476,7 +480,7 @@ private fun RecordDetailDispatcher(
             kind = "loan",
             onBack = back,
             onPay = pay,
-            onEdit = { navController.navigate(Routes.loanForm(id)) },
+            onEdit = { navController.navigate(Routes.loanForm(id)); Unit },
         )
         "emi" -> LoanDetailRoute(
             container = container,
@@ -484,7 +488,7 @@ private fun RecordDetailDispatcher(
             kind = "emi",
             onBack = back,
             onPay = pay,
-            onEdit = { navController.navigate(Routes.emiForm(id)) },
+            onEdit = { navController.navigate(Routes.emiForm(id)); Unit },
         )
         "person" -> PersonDetailRoute(
             container = container,
