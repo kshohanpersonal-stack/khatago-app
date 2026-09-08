@@ -96,7 +96,30 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Unit tests (JVM + Robolectric)
+        id: tests
         run: gradle --no-daemon :app:testDebugUnitTest --stacktrace
+
+      # Log download from this job is only reachable through the Actions results host, so the two
+      # things a reviewer needs when this step is red are repeated here: the compiler errors, and the
+      # assertion messages from the JUnit XML. Both are truncated on purpose — an annotation that scrolls
+      # forever is an annotation nobody reads.
+      - name: Surface the failure (only when tests did not pass)
+        if: failure() && steps.tests.outcome == 'failure'
+        run: |
+          set -uo pipefail
+          {
+            echo "### Test failure detail"
+            echo
+            echo '```'
+            find app/build/tmp -name '*.log' 2>/dev/null | head -5 |
+              xargs -r grep -hE "error:|unresolved reference|expecting" | head -60
+            find app/build/reports -name '*.txt' -path '*lint*' 2>/dev/null | head -2 |
+              xargs -r sed -n '1,40p'
+            find app/build/test-results -name 'TEST-*.xml' 2>/dev/null | head -20 |
+              xargs -r grep -hoE 'testcase name="[^"]+"|<failure message="[^"]{0,220}' | head -80
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Tests failed; see this run summary for compiler/assertion detail."
 
       - name: Android Lint (report only, does not fail the build)
         if: always()
