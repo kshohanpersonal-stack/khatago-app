@@ -499,86 +499,69 @@ jobs:
 
       - name: Assemble release APK (unsigned — signing is configured only in release.yml)
         run: gradle --no-daemon :app:assembleRelease
-      # Room writes app/schemas/com.khatago.finance.data.db.KhataGoDatabase/1.json while kapt runs, and
-      # that file is the review artifact every future migration is checked against. It must never be
-      # handwritten, so the only way to obtain it from this sandbox is to carry it out of a real build:
-      # GitHub's artefact and log hosts are unreachable from here, plain git is not. The step publishes
-      # whatever it found - including "I found nothing", via CARRIER.txt - because a carrier whose silence
-      # is indistinguishable from success is not evidence of anything. Once the JSON is tracked in the repo
-      # the status becomes `already-tracked`, which is how the step retires with no follow-up edit.
-      - name: Carry the Room schema baseline home
+      # `exportSchema = true` + `room.schemaLocation` make Room write
+      # app/schemas/com.khatago.finance.data.db.KhataGoDatabase/<version>.json while kapt runs, and that
+      # file is the review artifact every later migration is diffed against. Two things were learned the
+      # hard way here, and both shape this step:
+      #  * the shared Gradle build cache makes kaptDebugKotlin a cache hit on a warm runner, so Room never
+      #    re-runs and a plain "is app/schemas populated?" reads "no" although the config is right;
+      #  * the sandbox this project was built in cannot reach GitHub's artefact or log hosts, only plain
+      #    git - so whatever the step decides is published to `room-schema-baseline` as CARRIER.txt (plus
+      #    the generated file when it differs), never to a branch with other publishers on it.
+      # Drift is a warning, not a failure: a red build over an un-regenerated JSON teaches the wrong lesson
+      # on a Friday, while the warning plus the carried file fixes it in one command.
+      - name: Check the Room schema baseline against a real kapt run
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
-          gen=$(find app/schemas -name '*.json' 2>/dev/null | head -1 || true)
+          # A forced re-run of exactly one task: the shared Gradle build cache otherwise makes
+          # kaptDebugKotlin a cache hit, and a cache hit cannot be asked whether it wrote a schema.
+          gradle --no-daemon :app:kaptDebugKotlin --rerun >/dev/null 2>&1 || true
+          fresh=$(find app/schemas -name '*.json' 2>/dev/null | head -1 || true)
           r=$(mktemp -d)
           git init -q "$r"
           git -C "$r" config user.name ci-diagnostics
           git -C "$r" config user.email ci@localhost
           git -C "$r" checkout -q -b room-schema-baseline
-          if [ -z "$gen" ]; then
-            # `exportSchema = true` and `room.schemaLocation` are both configured, so an empty
-            # app/schemas is a contradiction, not a detail: either the option never reaches the processor
-            # or the file lands somewhere else. Say which, with the evidence a reader would ask for,
-            # rather than leaving "the schema is exported during kapt" as a sentence nobody tested.
-            echo "::warning::this build produced no Room schema JSON under app/schemas - investigating"
-            {
-              echo "mode: no-schema-generated"
-              echo "commit: $GITHUB_SHA"
-              echo "run: $GITHUB_RUN_ID"
-              echo "app/schemas contains:"
-              find app/schemas -type f | sed 's/^/  /'
-              echo "any schema-shaped json anywhere in the workspace:"
-              find . -name '*.json' -path '*chemas*' -not -path './.git/*' | head -10 | sed 's/^/  /'
-              echo "kapt output directories:"
-              find app/build -maxdepth 4 -type d -name 'kapt*' 2>/dev/null | head -10 | sed 's/^/  /'
-              echo "did the DAO implementation get generated at all (proof kapt ran):"
-              find app/build/generated -name 'KhataGoDatabase_Impl*.java' 2>/dev/null | head -3 | sed 's/^/  /'
-              echo "re-running kapt for debug with per-task info, keeping the schema lines:"
-              gradle --no-daemon :app:kaptDebugKotlin --rerun-tasks --info 2>&1 \
-                | grep -iE "schema|does not exist|annotation processor option" | head -12 | sed 's/^/  /'
-              echo "after the re-run, app/schemas holds:"
-              find app/schemas -type f | sed 's/^/  /'
-            } > "$r/CARRIER.txt"
-            gen=$(find app/schemas -name '*.json' 2>/dev/null | head -1 || true)
-            if [ -n "$gen" ]; then
-              mkdir -p "$r/$(dirname "$gen")"
-              cp "$GITHUB_WORKSPACE/$gen" "$r/$gen"
-              echo "the re-run produced $gen; publishing it alongside the diagnosis" >> "$r/CARRIER.txt"
-            fi
-          elif git ls-files --error-unmatch "$gen" >/dev/null 2>&1; then
-            echo "schema baseline is already tracked - nothing to carry"
-            {
-              echo "mode: already-tracked"
-              echo "path: $gen"
-              echo "commit: $GITHUB_SHA"
-              echo "run: $GITHUB_RUN_ID"
-            } > "$r/CARRIER.txt"
+          if [ -z "$fresh" ]; then
+            mode="kapt-emitted-nothing"
+            echo "::warning::Room exported no schema even with the task forced - check room.schemaLocation"
+          elif ! git ls-files --error-unmatch "$fresh" >/dev/null 2>&1; then
+            mode="baseline-missing"
+            echo "::warning::app/schemas holds no committed baseline - the generated file is on this branch"
+          elif git diff --quiet HEAD -- "$fresh"; then
+            mode="up-to-date"
+            echo "the committed schema baseline matches what Room just generated"
           else
-            mkdir -p "$r/$(dirname "$gen")"
-            cp "$GITHUB_WORKSPACE/$gen" "$r/$gen"
-            {
-              echo "mode: carried"
-              echo "path: $gen"
-              echo "bytes: $(wc -c < "$GITHUB_WORKSPACE/$gen" | tr -d ' ')"
-              echo "sha256: $(sha256sum "$GITHUB_WORKSPACE/$gen" | cut -c1-64)"
-              echo "commit: $GITHUB_SHA"
-              echo "run: $GITHUB_RUN_ID"
-            } > "$r/CARRIER.txt"
+            mode="drift"
+            echo "::warning::the committed baseline differs from what Room generated - review the diff on"
+            echo "::warning::room-schema-baseline and commit it if the schema change is intended"
+          fi
+          {
+            echo "mode: $mode"
+            echo "file: ${fresh:-none}"
+            echo "run: $GITHUB_RUN_ID"
+            echo "commit: $GITHUB_SHA"
+            if [ -n "$fresh" ]; then echo "sha256: $(sha256sum "$fresh" | cut -c1-64)"; fi
+            if [ "$mode" = "drift" ]; then
+              echo
+              echo "git diff HEAD -- $fresh"
+              git diff HEAD -- "$fresh" | head -80
+            fi
+          } > "$r/CARRIER.txt"
+          if [ "$mode" != "up-to-date" ] && [ -n "$fresh" ]; then
+            mkdir -p "$r/$(dirname "$fresh")"
+            cp "$fresh" "$r/$fresh"
           fi
           git -C "$r" add -A
-          git -C "$r" commit -qm "room schema carrier $GITHUB_RUN_ID"
-          # A branch of its own, deliberately: ci-diagnostics is force-pushed by the diagnose job, and two
-          # publishers clobbering one branch has already cost this project a diagnosis.
-          if git -C "$r" push -q --force \
+          git -C "$r" commit -qm "room schema carrier $GITHUB_RUN_ID ($mode)"
+          git -C "$r" push -q --force \
             "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            HEAD:refs/heads/room-schema-baseline; then
-            echo "PUBLISHED room-schema-baseline"
-          else
-            echo "::warning::could not publish room-schema-baseline; commit the schema after a local build"
-          fi
+            HEAD:refs/heads/room-schema-baseline \
+            && echo "PUBLISHED room-schema-baseline ($mode)" \
+            || echo "::warning::could not publish room-schema-baseline"
 
       - name: Formatting
         run: gradle --no-daemon spotlessCheck

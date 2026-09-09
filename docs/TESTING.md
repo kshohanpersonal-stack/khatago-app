@@ -100,8 +100,10 @@ An offline ledger app fails most often in places a JVM test cannot see. Run this
   `app/proguard-rules.pro`.
 - **Per-OEM notification behaviour.** Xiaomi/Samsung aggressive background killing is a device property; the
   app's contract is "a daily flexible window, idempotent per day", which is what `ReminderWorker` can guarantee.
-- **Room schema JSON diffs** are a *review* step (`app/schemas/…json` in the PR), not a test — the generated
-  file is the source of truth and CI has no schema baseline to compare against until the first release is cut.
+- **Room schema JSON diffs** are a *review* step (`app/schemas/…json` in the PR), not a test. CI force-runs
+  `:app:kaptDebugKotlin --rerun` and compares it with the committed baseline, but a mismatch is a warning, not
+  a failure: an un-regenerated JSON is a missing review artifact, not a broken build, and CI cannot know which
+  of the two the author intended. The verdict and the diff land in `CARRIER.txt` on `room-schema-baseline`.
 - **Cloud backup/restore of the file** — not our code and not our promise; the app only writes to where the user
   points the picker.
 

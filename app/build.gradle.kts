@@ -155,7 +155,10 @@ android {
 kapt {
     arguments {
         // Absolute path, which is what lets one setting serve every variant instead of needing a
-        // @RoomDatabase.Config class per source set to rewrite a relative one.
+        // @RoomDatabase.Config class per source set to rewrite a relative one. Room writes the file only
+        // when the processor actually runs: a cached kaptDebugKotlin skips it, so regenerating the
+        // baseline is `:app:kaptDebugKotlin --rerun`, and `app/schemas/README.md` explains what CI does
+        // with that.
         arg("room.schemaLocation", "$projectDir/schemas")
     }
     correctErrorTypes = true
