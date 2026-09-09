@@ -1,0 +1,5 @@
+probes starting
+probe1 exit=0
+probe2 exit=0
+probe3 exit=0
+PROBES FINISHED
