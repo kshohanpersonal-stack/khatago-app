@@ -69,11 +69,14 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
+          # Every checker is given its root explicitly, and the same list appears in release.yml: a
+          # default that quietly scans less than the docs promise is how a gate stops being one.
           for check in "tools/check_braces.py app/src" \
                        "tools/audit_imports.py app/src" \
-                       "tools/audit_symbols.py" \
-                       "tools/audit_data_api.py" \
-                       "tools/check_yaml.py .github/workflows"; do
+                       "tools/audit_symbols.py app/src" \
+                       "tools/audit_data_api.py app/src" \
+                       "tools/check_yaml.py .github/workflows" \
+                       "tools/check_workflows.py .github/workflows"; do
             echo "--- $check"
             python3 $check || rc=1
           done

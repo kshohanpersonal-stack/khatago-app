@@ -31,6 +31,12 @@ stored form:  "PBKDF2WithHmacSHA256:120000:<16-byte random salt, hex>:<32-byte d
   verification path derives and compares; the failure path increments a counter in the same preferences file.
 - **Shape is validated before hashing**: 4–8 digits, nothing else. A malformed PIN is refused with a
   message rather than stored as a weak secret.
+- **The stored string is ASCII whatever the device language is.** Both hex fields are rendered with
+  `Locale.US`. The triple is written once and re-read on every unlock, so a formatter that followed the
+  device locale could, on a locale whose decimal digits are not ASCII, store a value its own parser rejects
+  — a lockout that looks like a corrupted database. `SecurityLockTest` sets an Arabic locale, encodes, and
+  asserts both the shape (`32` and `64` hex characters) and a successful re-verify, so the property is a
+  test rather than a comment.
 - `MAX_ATTEMPTS = 5`, `LOCKOUT_MILLIS = 5 minutes`. After a cool-down the counter resets, and the UI shows
   `remainingAttempts` / `remainingLockoutMinutes` rather than a dead button.
 - **Biometrics are an accelerator, never a replacement.** `isBiometricEnabled` reports false while no PIN

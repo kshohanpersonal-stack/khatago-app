@@ -113,12 +113,14 @@ An offline ledger app fails most often in places a JVM test cannot see. Run this
 |---|---|
 | `check_braces.py` | braces/parens/brackets balance after stripping strings and comments, **and** every block comment closes (Kotlin comments nest) |
 | `audit_imports.py` | every project import resolves to a declared top-level name and is referenced — and every project or library name a file *uses* is imported by it |
-| `audit_symbols.py` | unqualified constructor calls in `ui/`, `container.*` accessors, `KhataGoIcons.*` members |
-| `audit_data_api.py` | every `database.xxxDao().method()` call site matches a declared DAO method |
+| `audit_symbols.py` | unqualified constructor calls in `ui/`, `container.*` accessors, `KhataGoIcons.*` members — over `app/src` by default, so the test sources are audited with the same rigour |
+| `audit_data_api.py` | every `database.xxxDao().method()` call site matches a declared DAO method, in main **and** test sources. A local only counts as a DAO handle when the whole right-hand side is the accessor, so `val rows = db.paymentDao().findForPayable(…)` cannot report `.single()` as a missing query |
 | `check_yaml.py` | the GitHub Actions files are structurally valid YAML (this sandbox has no PyYAML, so a real parser is unavailable) |
+| `check_workflows.py` | every `run:` block in those files is a script `bash -n` can parse — the gap `check_yaml.py` cannot see, and the one that cost real CI rounds (`while read` eating stdin, an `rc=$?` that stopped following its command, a heredoc quoting mistake) |
 
 ```bash
 for t in check_braces audit_imports audit_symbols audit_data_api; do python3 tools/$t.py app/src; done
+python3 tools/check_yaml.py .github/workflows && python3 tools/check_workflows.py .github/workflows
 ```
 
 They prove nothing about types, and no amount of them adds up to a build. A green sandbox run is a licence to
@@ -148,6 +150,11 @@ checks every `ProjectType.member` access against the members that type actually 
 quiet about extensions, enum-generated `entries` and unparseable bodies so it never cries wolf.
 Each rule was verified by re-injecting the original defect and confirming a `MISS` line and exit 1 —
 a static check nobody has seen fail is not evidence of anything.
+
+That is still the rule, and it is how the widened scope was accepted: injecting
+`database.paymentDao().totallyMadeUpQuery(1L)` into `PaymentRepository` **and** into `PaymentEngineTest` each
+printed a `MISS` line and exit 1, and the same injection done with a `"` left off a `run:` block made
+`check_workflows.py` name the file and line. Both then restored the tree and went quiet again.
 
 A fourth round found the *shape* of the bug behind 1048 errors, and it was a comment. The KDoc on
 `data/db/entity/Entities.kt` mentioned the generated schema files by glob — `app/schemas/` plus a star

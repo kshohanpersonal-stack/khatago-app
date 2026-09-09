@@ -197,7 +197,10 @@ def rel(path: Path) -> str:
 
 
 def main() -> int:
-    src_root = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'app' / 'src' / 'main' / 'java'
+    # Default to the whole source tree, not just the main source set: the Robolectric tests call the same
+    # constructors and DAOs, and an audit that quietly skips them has already skipped the bugs.
+    roots = [Path(a) if Path(a).is_absolute() else ROOT / a for a in sys.argv[1:]] or [ROOT / 'app' / 'src']
+    src_root = roots[0]
     files = sorted(src_root.rglob('*.kt'))
     if not files:
         print(f'no sources under {src_root}')
@@ -359,8 +362,9 @@ def main() -> int:
             print('MISS', p)
         print(f'{len(set(problems))} problem(s) — symbol-resolution check only')
         return 1
-    print(f'OK: {len(files)} file(s); every project import, ui call, container accessor and '
-          'qualified member access resolves')
+    shown = src_root.relative_to(ROOT) if src_root != ROOT else Path('.')
+    print(f'OK: {len(files)} file(s) under {shown}; every project import, ui call, container '
+          'accessor and qualified member access resolves (not a type check)')
     return 0
 
 

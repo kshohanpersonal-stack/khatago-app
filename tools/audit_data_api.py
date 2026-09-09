@@ -6,7 +6,10 @@ Why this exists: the sandbox that produced this code has no JVM, so a typo in a 
 caught by a compiler. This script does not type-check anything — it catches the one class of error
 that a compiler would catch cheaply: calling a query that was never written.
 
-Run: python3 tools/audit_data_api.py
+Test sources are scanned too: the app's money tests call the DAOs directly, and that is where a
+renamed or never-written query tends to appear first.
+
+Run: python3 tools/audit_data_api.py [root ...]   (default: app/src)
 """
 from __future__ import annotations
 
@@ -17,6 +20,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MAIN = ROOT / 'app' / 'src' / 'main' / 'java' / 'com' / 'khatago' / 'finance'
 DAO_DIR = MAIN / 'data' / 'db' / 'dao'
+# Where to look for call sites. `app/src` covers main + test + androidTest in one argument.
+DEFAULT_ROOTS = [ROOT / 'app' / 'src']
 
 CALL = re.compile(r'\b(?:database|db)\.(\w*[Dd]ao)\(\)\.(\w+)')
 # Guard: only accessors that look like DAO methods are audited (see main()).
@@ -29,7 +34,10 @@ NON_DAO_MEMBERS = {
     "coerceAtLeast", "coerceIn", "coerceAtMost", "let", "takeIf", "firstOrNull", "orEmpty",
 }
 
-LOCAL_ALIAS = re.compile(r'val\s+(\w+)\s*=\s*(?:database|db)\.(\w*[Dd]ao)\(\)')
+# An alias counts as a DAO handle only when the *whole* right-hand side is the accessor:
+# `val dao = database.paymentDao()` yes, `val rows = database.paymentDao().findForPayable(...)` no — the
+# latter is a List, and treating it as a DAO invented a "missing method" for every `.single()` in a test.
+LOCAL_ALIAS = re.compile(r'val\s+(\w+)\s*=\s*(?:database|db)\.(\w*[Dd]ao)\(\)\s*$', re.M)
 
 
 def dao_names() -> dict[str, set[str]]:
@@ -53,9 +61,11 @@ def main() -> int:
         if name not in accessors.values():
             print(f"WARN dao interface {name} has no accessor on KhataGoDatabase")
 
+    roots = [Path(a) if Path(a).is_absolute() else ROOT / a for a in sys.argv[1:]] or DEFAULT_ROOTS
+    files = sorted({f for root in roots for f in root.rglob('*.kt')})
     problems: list[str] = []
     checked = 0
-    for file in sorted(MAIN.rglob('*.kt')):
+    for file in files:
         if 'data/db/dao' in str(file).replace('\\', '/'):
             continue
         text = file.read_text(encoding='utf-8')
@@ -83,13 +93,14 @@ def main() -> int:
                 if method not in daos.get(iface, set()):
                     problems.append(f"{file.name}: {alias}.{method}() ({iface}) not declared")
 
-    print(f"checked {checked} DAO call sites")
+    print(f"checked {checked} DAO call sites in {len(files)} file(s) under "
+          + ", ".join(str(r.relative_to(ROOT)) for r in roots))
     if problems:
         for p in sorted(set(problems)):
             print("MISS", p)
         print(f"{len(set(problems))} problem(s)")
         return 1
-    print("OK: every DAO call site resolves to a declared method")
+    print("OK: every DAO call site resolves to a declared method (not a type check)")
     return 0
 
 

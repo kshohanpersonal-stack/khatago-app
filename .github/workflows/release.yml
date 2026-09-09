@@ -42,6 +42,15 @@ jobs:
           set -euo pipefail
           REF="${{ github.event.inputs.tag }}"
           if [ -z "$REF" ]; then REF="${GITHUB_REF_NAME}"; fi
+          # A dispatch that names a tag must build *that* tag. Without this the job would compile whatever
+          # ref Actions checked out while publishing a Release labelled with a different commit - a release
+          # whose artefacts do not belong to its own tag is worse than no release.
+          if [ "$REF" != "${GITHUB_REF_NAME}" ]; then
+            git rev-parse -q --verify "refs/tags/$REF" >/dev/null || {
+              echo "::error::tag $REF is not in this checkout"; exit 1; }
+            git checkout -q "refs/tags/$REF"
+            echo "Checked out $REF at $(git rev-parse --short HEAD)"
+          fi
           echo "name=$REF" >> "$GITHUB_OUTPUT"
           echo "Building $REF"
 
@@ -86,12 +95,27 @@ jobs:
       - name: Tests must pass before a release is cut
         run: gradle --no-daemon :app:testDebugUnitTest
 
+      # `set -euo pipefail` is not decoration here: without it a checker that fails mid-list is
+      # overwritten by the next command's exit status, and the step reports success. A release gate that
+      # cannot fail is not a gate.
       - name: Static checks
         run: |
-          python3 tools/check_braces.py app/src
-          python3 tools/audit_imports.py app/src
-          python3 tools/audit_symbols.py
-          python3 tools/audit_data_api.py
+          set -euo pipefail
+          for check in "tools/check_braces.py app/src" \
+                       "tools/audit_imports.py app/src" \
+                       "tools/audit_symbols.py app/src" \
+                       "tools/audit_data_api.py app/src" \
+                       "tools/check_workflows.py .github/workflows"; do
+            echo "--- $check"
+            python3 $check
+          done
+          # The published Release body asserts one privacy claim, so it is proven here rather than
+          # trusted to some earlier green run of ci.yml on a different commit.
+          if grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml; then
+            echo "::error::the release text promises no INTERNET permission and the manifest asks for it"
+            exit 1
+          fi
+          gradle --no-daemon spotlessCheck
         env:
           PYTHONUNBUFFERED: "1"
 
@@ -110,8 +134,18 @@ jobs:
           cp app/build/outputs/apk/release/*.apk out/ 2>/dev/null || true
           cp app/build/outputs/bundle/release/*.aab out/ 2>/dev/null || true
           ls -l out
-          (cd out && sha256sum * > SHA256SUMS || true)
-          cat out/SHA256SUMS || true
+          # An empty release is worse than a failed one: nobody re-checks an asset list that looked fine.
+          if ! ls out/*.apk out/*.aab >/dev/null 2>&1; then
+            echo "::error::nothing landed in out/ - the assemble step or its output paths changed"
+            exit 1
+          fi
+          # The list is taken before the file exists on purpose. `sha256sum * > SHA256SUMS` hashes the
+          # empty SHA256SUMS that the redirect created first, and the recorded line then contradicts the
+          # finished file - so `sha256sum -c SHA256SUMS`, the command this release tells people to run,
+          # would report a failure caused by the checksum file itself.
+          files=$(cd out && ls | grep -v '^SHA256SUMS$')
+          (cd out && sha256sum $files > SHA256SUMS)
+          cat out/SHA256SUMS
 
       - name: Verify what was built
         run: |
@@ -119,9 +153,14 @@ jobs:
           apk=$(ls out/*.apk 2>/dev/null | head -1 || true)
           if [ -n "$apk" ]; then
             echo "### $apk"
-            BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | tail -1)
-            "${BT}aapt" dump permissions "$apk" | sed -n '1,20p' || true
-            if "${BT}apksigner" verify --print-certs "$apk" >/dev/null 2>&1; then
+            BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | tail -1 || true)
+            "${BT:-}aapt" dump permissions "$apk" | sed -n '1,20p' || true
+            # Three answers, not two: "apksigner is missing" must not be reported as "the APK is
+            # unsigned", because that is a statement about the artefact nobody verified.
+            if [ ! -x "${BT}apksigner" ]; then
+              echo "::warning::no apksigner under $ANDROID_HOME/build-tools - the signature was NOT verified" |
+                tee -a "$GITHUB_STEP_SUMMARY"
+            elif "${BT}apksigner" verify --print-certs "$apk" >/dev/null 2>&1; then
               echo "Signed with the release key." | tee -a "$GITHUB_STEP_SUMMARY"
             else
               echo "Unsigned, which is expected when KHATAGO_KEYSTORE_* secrets are absent." | tee -a "$GITHUB_STEP_SUMMARY"

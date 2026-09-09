@@ -35,7 +35,8 @@ gradle spotlessApply                                   # formatting is enforced,
 gradle :app:testDebugUnitTest :app:lintDebug
 gradle :app:assembleDebug                                # install + smoke-test the debug build first
 python3 tools/check_braces.py app/src && python3 tools/audit_imports.py app/src \
-  && python3 tools/audit_symbols.py && python3 tools/audit_data_api.py
+  && python3 tools/audit_symbols.py app/src && python3 tools/audit_data_api.py app/src
+python3 tools/check_yaml.py .github/workflows && python3 tools/check_workflows.py .github/workflows
 
 # 2. Work through the manual QA list in docs/TESTING.md §4. Do not skip it; it is short and it is
 #    where a money app actually breaks (timezone, process death, Excel, a device with no notifications).
@@ -45,6 +46,8 @@ gradle :app:assembleRelease :app:bundleRelease
 
 # 4. Commit the Room schema export if kapt regenerated it, so the next migration has a diff to review:
 git add app/schemas && git status --short app/schemas
+#    (No local build available? CI carries the generated JSON out on the `room-schema-baseline` branch
+#    whenever the committed one is missing; fetch it with `git fetch origin room-schema-baseline`.)
 
 # 5. Tag and push. CI runs, and release.yml publishes a GitHub Release for a `v*` tag.
 git commit -am "release: 1.0.1"
@@ -212,9 +215,13 @@ gh api -X PUT repos/:owner/:repo/actions/workflows/ci.yml/enable 2>/dev/null || 
 - `ci.yml` runs on every push to `main` and on every PR: hygiene grep (no keystores, no `INTERNET`, no
   networking SDK) → the four `tools/` static checks → `testDebugUnitTest` → `lintDebug` →
   `assembleDebug` + `assembleRelease` → `spotlessCheck`, uploading test/lint reports and both APKs.
-- `release.yml` runs on `v*` tags: the same gates, then `assembleRelease :app:bundleRelease`, checksums,
-  signature verification, and a GitHub Release. Absent signing secrets ⇒ **unsigned** artefacts plus a
-  warning in the summary; it never fakes a signature.
+- `release.yml` runs on `v*` tags (and on dispatch, which checks the named tag out rather than building
+  whatever ref Actions happened to check out). The same gates as CI — tests, the four `tools/` checks, the
+  workflow parsers, `spotlessCheck` — plus the two that only matter at a tag: the manifest is grepped for
+  `INTERNET` before the Release body gets to claim there is none, and an empty `out/` aborts instead of
+  publishing a release with no assets. Checksums exclude `SHA256SUMS` itself so `sha256sum -c` agrees with
+  the file it reads. Absent signing secrets ⇒ **unsigned** artefacts plus a warning in the summary; a missing
+  `apksigner` is reported as *not verified*, never as *unsigned*. It never fakes a signature.
 - Neither workflow deploys anything or touches a store. `ci.yml` holds `contents: write` for exactly one
   purpose — publishing a red run's diagnostics to the `ci-diagnostics` branch, the only log channel
   reachable from networks that block GitHub's Actions hosts. It never writes to `main`; `release.yml`

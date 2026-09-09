@@ -58,6 +58,10 @@ than throwing for anything out of range.
   number, and a paper khata writes it outside;
 - the same function is used by every screen, the CSV writer and the report headers, so a printed report can
   be compared against the screen digit for digit.
+- every percentage is `.`-fixed too (`MoneyFormat.percentLabel`, the schedule's `percentLabel`, the insight
+  sentences): a bar label like `66,7%` under `৳1,000.50` reads as a different convention on the same line,
+  and on a locale with non-ASCII digits it stops being a number at all. Any `%`-formatted output in this
+  app is therefore locale-pinned — including the hex in the app lock, where the value is parsed back later.
 
 `MoneyFormat.toCsvNumber(minor, currency)` is the export variant: plain major-unit decimal, no symbol, no
 grouping, `RoundingMode.HALF_UP` to the currency's scale — `1234.50`. A spreadsheet must be able to sum the
