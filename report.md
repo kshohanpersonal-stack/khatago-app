@@ -1,4 +1,4 @@
-# KhataGo compile diagnostics for run 34295392126
+# KhataGo compile diagnostics for run 34305032893
 
 ```
 gradle on PATH: /home/runner/work/_temp/.gradle-actions/gradle-installations/installs/gradle-8.9/bin/gradle
@@ -24,95 +24,29 @@ OS:            Linux 6.17.0-1022-azure amd64
 
 ## Probe 1 - compileDebugKotlin, kapt tasks disabled
 
-exit=0 lines=68 errors=0
+exit=0 lines=93 errors=0
 
 ```
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preDebugBuild UP-TO-DATE
 > Task :app:checkKotlinGradlePluginConfigurationErrors
-> Task :app:generateDebugResValues FROM-CACHE
 > Task :app:generateDebugBuildConfig FROM-CACHE
-> Task :app:generateDebugResources FROM-CACHE
+> Task :app:generateDebugResValues FROM-CACHE
 > Task :app:createDebugCompatibleScreenManifests
-> Task :app:packageDebugResources FROM-CACHE
-> Task :app:parseDebugLocalResources FROM-CACHE
-> Task :app:extractDeepLinksDebug FROM-CACHE
+> Task :app:generateDebugResources FROM-CACHE
 > Task :app:mapDebugSourceSetPaths
+> Task :app:extractDeepLinksDebug FROM-CACHE
+> Task :app:packageDebugResources FROM-CACHE
+> Task :app:mergeDebugResources FROM-CACHE
 > Task :app:checkDebugAarMetadata
+> Task :app:parseDebugLocalResources FROM-CACHE
 > Task :app:processDebugMainManifest FROM-CACHE
 > Task :app:processDebugManifest FROM-CACHE
 > Task :app:processDebugManifestForPackage FROM-CACHE
-> Task :app:mergeDebugResources FROM-CACHE
 > Task :app:processDebugResources FROM-CACHE
 > Task :app:kaptGenerateStubsDebugKotlin SKIPPED
 > Task :app:kaptDebugKotlin SKIPPED
-> Task :app:compileDebugKotlin FROM-CACHE
-BUILD SUCCESSFUL in 13s
+> Task :app:compileDebugKotlin
+BUILD SUCCESSFUL in 1m 7s
 ```
-
-## Probe 2 - unit-test sources compile, kapt tasks disabled
-
-exit=0 lines=74 errors=0
-
-```
-> Task :app:preBuild UP-TO-DATE
-> Task :app:preDebugBuild UP-TO-DATE
-> Task :app:checkKotlinGradlePluginConfigurationErrors
-> Task :app:generateDebugResValues UP-TO-DATE
-> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
-> Task :app:generateDebugBuildConfig UP-TO-DATE
-> Task :app:extractDeepLinksDebug UP-TO-DATE
-> Task :app:generateDebugResources UP-TO-DATE
-> Task :app:mapDebugSourceSetPaths UP-TO-DATE
-> Task :app:checkDebugAarMetadata UP-TO-DATE
-> Task :app:mergeDebugResources UP-TO-DATE
-> Task :app:packageDebugResources UP-TO-DATE
-> Task :app:parseDebugLocalResources UP-TO-DATE
-> Task :app:processDebugMainManifest UP-TO-DATE
-> Task :app:processDebugManifest UP-TO-DATE
-> Task :app:processDebugManifestForPackage UP-TO-DATE
-> Task :app:javaPreCompileDebug FROM-CACHE
-> Task :app:processDebugResources UP-TO-DATE
-> Task :app:kaptGenerateStubsDebugKotlin SKIPPED
-> Task :app:kaptDebugKotlin SKIPPED
-> Task :app:compileDebugKotlin UP-TO-DATE
-> Task :app:compileDebugJavaWithJavac FROM-CACHE
-> Task :app:bundleDebugClassesToCompileJar
-> Task :app:kaptGenerateStubsDebugUnitTestKotlin SKIPPED
-> Task :app:kaptDebugUnitTestKotlin SKIPPED
-> Task :app:compileDebugUnitTestKotlin FROM-CACHE
-BUILD SUCCESSFUL in 10s
-```
-
-## Probe 3 - release variant compiles, kapt tasks disabled
-
-exit=0 lines=68 errors=0
-
-```
-> Task :app:preBuild UP-TO-DATE
-> Task :app:preReleaseBuild UP-TO-DATE
-> Task :app:checkKotlinGradlePluginConfigurationErrors
-> Task :app:generateReleaseResValues FROM-CACHE
-> Task :app:generateReleaseBuildConfig FROM-CACHE
-> Task :app:createReleaseCompatibleScreenManifests
-> Task :app:generateReleaseResources FROM-CACHE
-> Task :app:extractDeepLinksRelease FROM-CACHE
-> Task :app:packageReleaseResources FROM-CACHE
-> Task :app:parseReleaseLocalResources FROM-CACHE
-> Task :app:mapReleaseSourceSetPaths
-> Task :app:processReleaseMainManifest FROM-CACHE
-> Task :app:processReleaseManifest FROM-CACHE
-> Task :app:checkReleaseAarMetadata
-> Task :app:processReleaseManifestForPackage FROM-CACHE
-> Task :app:mergeReleaseResources FROM-CACHE
-> Task :app:processReleaseResources FROM-CACHE
-> Task :app:kaptGenerateStubsReleaseKotlin SKIPPED
-> Task :app:kaptReleaseKotlin SKIPPED
-> Task :app:compileReleaseKotlin FROM-CACHE
-BUILD SUCCESSFUL in 9s
-```
-
-
-## status
-
 
