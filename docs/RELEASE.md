@@ -141,7 +141,9 @@ git show FETCH_HEAD:p2.log         | less   # compileDebugUnitTestKotlin, same t
 git show FETCH_HEAD:p3.log         | less   # compileReleaseKotlin: the variant an APK is built from
 git show FETCH_HEAD:status.txt     # exit code, line count and diagnostic count per probe
 git show FETCH_HEAD:tools.txt      # which gradle/java actually ran
+git show FETCH_HEAD:tests-failures.txt   # every failing test by name, with its assertion message
 git show FETCH_HEAD:tests.log      | less   # the build job's test step, verbatim, when it got that far
+python3 tools/summarise_tests.py app/build/test-results/testDebugUnitTest   # the same summary locally
 ```
 
 The grouping command that turns a probe log into a work list, because fixing 126 errors one at a time is
@@ -155,6 +157,11 @@ It is normal for the count to be huge and the causes to be few: one unclosed com
 every type it wraps, and each missing import multiplies by every line that touches the type. Fix the
 comment, the import and the *declaration* mismatches first, then re-run — the tail of the list is usually
 fallout from the head of it, and re-reading a fresh run is cheaper than reasoning about stale output.
+
+Both publishers *append* to that branch rather than force-pushing a tree of their own: the build job pushes
+its test files and the `diagnose-compile` job pushes its probes about a minute later, and in run 34294889282
+the second force-push deleted `tests.log` — the only file that named the failing tests. Nothing else on
+that branch is precious, so a stray file costs nothing.
 
 Delete the branch when the build is green again: `git push origin :ci-diagnostics`.
 

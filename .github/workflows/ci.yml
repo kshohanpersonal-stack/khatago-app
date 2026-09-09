@@ -130,6 +130,11 @@ jobs:
           git init -q "$r"
           git -C "$r" config user.name ci-diagnostics
           git -C "$r" config user.email ci@localhost
+          # Start from the branch's current tip so the build job's files (tests.log, diagnostics.md) are
+          # still there when this job adds the probes: two force-pushes from scratch and only one of them
+          # survives, and in run 34294889282 it was the wrong one.
+          git -C "$r" fetch -q "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-diagnostics 2>/dev/null \
+            && git -C "$r" checkout -q -B ci-diagnostics FETCH_HEAD 2>/dev/null || true
           for f in "$d"/*.md "$d"/*.txt "$d"/*.log; do
             [ -e "$f" ] && cp "$f" "$r/$(basename "$f")"
           done
@@ -442,22 +447,43 @@ jobs:
               "$GITHUB_WORKSPACE/app/build/tmp"/*.log 2>/dev/null | head -40
             echo '```'
           } > "$diag"
+          # Gradle's stdout says "5 tests completed, 1 failed" and names nothing; the JUnit XML it writes
+          # next to that has the test, the assertion message and the stack. Parse the XML, because a
+          # `grep` over the log cannot tell a failing case from a class header, and this file is the whole
+          # reason a red test run is diagnosable from a network that cannot read Actions logs.
+          failures=/tmp/tests-failures.txt
+          # Gradle's stdout says "5 tests completed, 1 failed" and names nothing; the JUnit XML written
+          # beside it has the test, the assertion message and the stack. Parsed by a tool in the
+          # repository rather than an inline script, so the same summary is available to anyone running
+          # `./gradlew test` locally - and so a heredoc does not have to be indented inside a YAML block
+          # scalar, which is a trap worth not setting for the next person.
+          python3 tools/summarise_tests.py app/build/test-results/testDebugUnitTest > "$failures" \
+            2>/dev/null || echo "no JUnit XML to read" > "$failures"
+          cat "$failures" >> "$diag" 2>/dev/null || true
           # Publish the report on a throwaway branch. Everything else that could carry a log (the log
           # host, artefacts, check-run summaries, annotations past 25, workflow permissions for issues)
           # was either unreadable from a restricted network or silently capped; git is not.
           git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD > /tmp/rev.txt
           dest=$(mktemp -d)
+          url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git -C "$dest" init -q -b ci-diagnostics
           git -C "$dest" config user.name ci-diagnostics && git -C "$dest" config user.email ci@localhost
+          # Append to whatever is on the branch instead of force-pushing a tree of our own. The
+          # `diagnose-compile` job publishes its probes to the same branch a minute later, and its
+          # `--force` deleted this job's `tests.log` — the only file naming the failing tests — in run
+          # 34294889282. Two publishers, one branch: the second must build on the first.
+          if git -C "$dest" fetch -q "$url" ci-diagnostics 2>/dev/null; then
+            git -C "$dest" checkout -q -B ci-diagnostics FETCH_HEAD 2>/dev/null || true
+          fi
           cp "$diag" "$dest/diagnostics.md"
           cp /tmp/build-errors.txt "$dest/build-errors.txt" 2>/dev/null || true
           cp /tmp/tests.log "$dest/tests.log" 2>/dev/null || true
+          cp /tmp/tests-failures.txt "$dest/tests-failures.txt" 2>/dev/null || true
           cp /tmp/rev.txt "$dest/rev.txt"
           git -C "$dest" add -A && git -C "$dest" commit -qm "diagnostics for $GITHUB_RUN_ID"
-          git -C "$dest" push -q --force \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            ci-diagnostics:ci-diagnostics \
-            || echo "::error title=diagnostics-push-failed::could not push ci-diagnostics"
+          git -C "$dest" push -q "$url" HEAD:refs/heads/ci-diagnostics || \
+            git -C "$dest" push -q --force "$url" HEAD:refs/heads/ci-diagnostics || \
+            echo "::error title=diagnostics-push-failed::could not push ci-diagnostics"
           echo "Tests failed; see the annotations on this check run."
 
       - name: Android Lint (report only, does not fail the build)
