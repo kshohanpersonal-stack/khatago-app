@@ -50,3 +50,37 @@ exit=0 lines=68 errors=0
 BUILD SUCCESSFUL in 13s
 ```
 
+## Probe 2 - unit-test sources compile, kapt tasks disabled
+
+exit=0 lines=74 errors=0
+
+```
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:javaPreCompileDebug FROM-CACHE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:kaptGenerateStubsDebugKotlin SKIPPED
+> Task :app:kaptDebugKotlin SKIPPED
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac FROM-CACHE
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:kaptGenerateStubsDebugUnitTestKotlin SKIPPED
+> Task :app:kaptDebugUnitTestKotlin SKIPPED
+> Task :app:compileDebugUnitTestKotlin FROM-CACHE
+BUILD SUCCESSFUL in 10s
+```
+
