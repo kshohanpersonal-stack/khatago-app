@@ -56,12 +56,12 @@ to this project's gradle.properties.
 > Task :app:kaptGenerateStubsDebugKotlin SKIPPED
 > Task :app:kaptDebugKotlin SKIPPED
 > Task :app:compileDebugKotlin UP-TO-DATE
-> Task :app:compileDebugJavaWithJavac FROM-CACHE
+> Task :app:compileDebugJavaWithJavac
 > Task :app:bundleDebugClassesToCompileJar
 > Task :app:kaptGenerateStubsDebugUnitTestKotlin SKIPPED
 > Task :app:kaptDebugUnitTestKotlin SKIPPED
-> Task :app:compileDebugUnitTestKotlin FROM-CACHE
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1788914028972.json
+> Task :app:compileDebugUnitTestKotlin
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1788923030205.json
 
 Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
 
@@ -69,6 +69,6 @@ You can use '--warning-mode all' to show the individual deprecation warnings and
 
 For more on this, please refer to https://docs.gradle.org/8.9/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
 
-BUILD SUCCESSFUL in 10s
-20 actionable tasks: 2 executed, 3 from cache, 15 up-to-date
+BUILD SUCCESSFUL in 25s
+20 actionable tasks: 4 executed, 1 from cache, 15 up-to-date
 Configuration cache entry stored.
