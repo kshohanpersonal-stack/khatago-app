@@ -148,9 +148,9 @@ A cancelled plan's down payment stays cancelled: it is excluded from every total
 - `InstallmentAllocator.allocate(lines, totalPaid, today)` applies an obligation's paid total
   chronologically and greedily, with money paid *directly at a line* counting first. Those line figures are a
   **subset** of `totalPaid` (a payment against an instalment is also a payment against the obligation), so the
-  pool that spreads over the schedule is `totalPaid - SUM(lines' own paid)`. `sum(allocated)` therefore equals
-  the obligation's paid total instead of exceeding it, which is the property that keeps the schedule and the
-  headline in agreement.
+  pool that spreads over the schedule is `totalPaid - SUM(lines' own paid)`. `sum(allocated)` is therefore
+  exactly the obligation's paid total whenever the schedule can absorb it, and never more than it — that is
+  the property that keeps the schedule and the headline in agreement.
 - Per-line `paidMinor` is display state. The authoritative paid total is always the payments table (plus the
   down payment), never `SUM(installments.paidMinor)`.
 

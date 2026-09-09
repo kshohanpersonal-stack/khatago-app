@@ -170,3 +170,25 @@ already imports unambiguously from exactly one package. Dotted access (`Modifier
 through an import — as are enum entries and `private` top-level declarations, which nobody can import.
 The same discipline as above: each rule was proven by deleting an import that a fix had just added and
 watching the checker report it.
+
+**What running the suite found, which none of the above could.** The first execution of
+`:app:testDebugUnitTest` reported 12 failing of 93 tests — and 0 of those 12 were a syntax, import or
+structure problem that a checker could have seen. Four were the app being wrong about money:
+
+- `StatsDao` derived the loan and EMI headlines against a *different* down-payment convention from every
+  other query in the app. A loan's paid side left the down payment out, so a loan with every instalment
+  paid still reported its down payment as outstanding — the dashboard could never show it settled. An
+  EMI's total added the down payment again although `totalPayable` already contains it, so the tile showed
+  one instalment more than anyone owed. `PaymentEngineTest` caught both because it compares the tile, the
+  module query and the engine snapshot against each other, not against a constant.
+- `InstallmentAllocator` spread the obligation's whole paid total *on top of* what each line had already
+  been paid for, so `sum(allocated)` exceeded the paid total and lines read as settled that nobody paid
+  for. A line's `paidMinor` is a **subset** of the obligation's paid total, never an addition to it.
+
+The other eight were tests asserting the wrong number — including two EMI fixtures written straight from
+`docs/MONEY.md` §6, which itself stated the double-counted identity. The doc was corrected first, then the
+fixtures, because a doc that is wrong produces wrong tests faster than it produces wrong code. What was *not*
+done is the part worth stating: no assertion was deleted, skipped or softened to reach green. The cases
+that were wrong now assert more than before (the cap is tested at its boundary; `wouldExceed` at its
+inclusive edge; the sum-of-rows case checks three derivations agree for *any* deleted row instead of a
+hard-coded one), and the four real defects stay pinned by the same tests that found them.
