@@ -20,18 +20,18 @@ to this project's gradle.properties.
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preDebugBuild UP-TO-DATE
 > Task :app:checkKotlinGradlePluginConfigurationErrors
-> Task :app:generateDebugBuildConfig FROM-CACHE
 > Task :app:generateDebugResValues FROM-CACHE
+> Task :app:generateDebugBuildConfig FROM-CACHE
 > Task :app:generateDebugResources FROM-CACHE
 > Task :app:createDebugCompatibleScreenManifests
 > Task :app:packageDebugResources FROM-CACHE
 > Task :app:parseDebugLocalResources FROM-CACHE
 > Task :app:extractDeepLinksDebug FROM-CACHE
 > Task :app:mapDebugSourceSetPaths
+> Task :app:checkDebugAarMetadata
 > Task :app:processDebugMainManifest FROM-CACHE
 > Task :app:processDebugManifest FROM-CACHE
 > Task :app:processDebugManifestForPackage FROM-CACHE
-> Task :app:checkDebugAarMetadata
 > Task :app:mergeDebugResources FROM-CACHE
 
 > Task :app:processDebugResources FROM-CACHE
@@ -55,7 +55,7 @@ to this project's gradle.properties.
 > Task :app:kaptGenerateStubsDebugKotlin SKIPPED
 > Task :app:kaptDebugKotlin SKIPPED
 > Task :app:compileDebugKotlin FROM-CACHE
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1788913628419.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1788914014452.json
 
 Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
 
@@ -63,6 +63,6 @@ You can use '--warning-mode all' to show the individual deprecation warnings and
 
 For more on this, please refer to https://docs.gradle.org/8.9/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
 
-BUILD SUCCESSFUL in 15s
+BUILD SUCCESSFUL in 13s
 16 actionable tasks: 4 executed, 12 from cache
 Configuration cache entry stored.
