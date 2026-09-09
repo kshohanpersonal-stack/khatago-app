@@ -345,4 +345,3 @@ private fun ObligationRow.toObligation(type: PayableType) = Obligation(
     dueDateEpochDay = dueDateEpochDay,
     cancelled = cancelled,
 )
-

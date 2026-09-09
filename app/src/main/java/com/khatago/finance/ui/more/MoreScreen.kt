@@ -290,4 +290,3 @@ private fun MiniBalance(modifier: Modifier, label: String, amount: String, tint:
         Text(text = amount, style = MaterialTheme.typography.titleLarge, color = tint)
     }
 }
-

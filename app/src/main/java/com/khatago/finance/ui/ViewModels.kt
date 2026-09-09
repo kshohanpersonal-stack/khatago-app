@@ -603,4 +603,3 @@ class SearchViewModel(container: AppContainer) : KhataGoViewModel(container) {
         query.value = value
     }
 }
-
