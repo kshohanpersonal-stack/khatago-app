@@ -86,7 +86,9 @@ object MoneyFormat {
 
     /** `66.7%` style label; `—` when there is nothing to divide by. */
     fun percentLabel(part: MoneyMinor, whole: MoneyMinor): String =
-        if (whole.isZero) "—" else "${"%.1f".format(percentOf(part, whole))}%"
+        // The decimal mark is pinned to `.` because the label sits next to a taka amount that always
+        // uses `.`, and two separators on one line read as two different numbers.
+        if (whole.isZero) "—" else "${"%.1f".format(java.util.Locale.US, percentOf(part, whole))}%"
 }
 
 /** Keeps the BigDecimal conversion in one tested place instead of repeating it. */

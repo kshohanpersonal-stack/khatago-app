@@ -342,7 +342,7 @@ object BackupValidation {
     internal fun formatMinor(minor: Long): String {
         val negative = minor < 0L
         val magnitude = Math.abs(minor)
-        val text = "%d.%02d".format(magnitude / 100L, magnitude % 100L)
+        val text = "%d.%02d".format(java.util.Locale.US, magnitude / 100L, magnitude % 100L)
         return (if (negative) "-" else "") + "৳$text"
     }
 

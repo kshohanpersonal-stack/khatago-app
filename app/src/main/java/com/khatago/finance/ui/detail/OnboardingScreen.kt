@@ -237,7 +237,7 @@ fun OnboardingRoute(container: AppContainer, onFinished: () -> Unit) {
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
-                                        text = "%02d:00".format(hour),
+                                        text = "%02d:00".format(java.util.Locale.US, hour),
                                         style = MaterialTheme.typography.labelMedium,
                                     )
                                 }

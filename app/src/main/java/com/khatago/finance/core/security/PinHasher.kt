@@ -52,7 +52,10 @@ object PinHasher {
         return SecretKeyFactory.getInstance(ALGORITHM).generateSecret(spec).encoded
     }
 
-    private fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }
+    // Locale-pinned on purpose: this hex is *stored* (the PBKDF2 triple in SharedPreferences) and read
+    // back byte-wise, so a device whose default locale renders digits with non-ASCII glyphs would write
+    // a value the verifier cannot reproduce and lock the vault with nothing to unlock it with.
+    private fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(java.util.Locale.US, it) }
 
     private fun String.toByteArrayFromHex(): ByteArray? {
         if (length % 2 != 0) return null

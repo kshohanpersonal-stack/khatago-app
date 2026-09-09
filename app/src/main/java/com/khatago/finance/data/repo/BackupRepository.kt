@@ -550,7 +550,12 @@ enum class RestoreMode {
 /** Result of writing a backup file. */
 sealed interface ExportResult {
     data class Done(val recordCount: Int, val bytes: Int) : ExportResult {
-        val humanSize: String get() = if (bytes < 1024) "$bytes B" else "%.1f KB".format(bytes / 1024.0)
+        val humanSize: String
+            get() = if (bytes < 1024) {
+                "$bytes B"
+            } else {
+                "%.1f KB".format(java.util.Locale.US, bytes / 1024.0)
+            }
     }
 
     data class Failed(val message: String) : ExportResult

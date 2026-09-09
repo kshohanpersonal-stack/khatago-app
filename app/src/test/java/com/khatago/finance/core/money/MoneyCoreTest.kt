@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Locale
 
 /**
  * The money primitives. These tests exist because everything else in the app trusts them: a rounding
@@ -163,6 +164,21 @@ class MoneyCoreTest {
     @Test
     fun `negative amounts keep the sign outside the symbol`() {
         assertEquals("-৳5.00", MoneyFormat.format(-500L, bdt))
+    }
+
+    @Test
+    fun `percent labels use the same decimal mark as the amounts beside them`() {
+        // Money is rendered by hand and is always `.`-separated; a percentage that went through
+        // java.util.Formatter with the device locale would print `66,7%` next to `৳1,000.50` and read as
+        // two different conventions on one line. The locale is pinned, so the line cannot disagree.
+        val saved = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("de"))
+            assertEquals("66.7%", MoneyFormat.percentLabel(MoneyMinor.ofMinor(2L), MoneyMinor.ofMinor(3L)))
+            assertEquals(66.66666, MoneyFormat.percentOf(MoneyMinor.ofMinor(2L), MoneyMinor.ofMinor(3L)), 1e-4)
+        } finally {
+            Locale.setDefault(saved)
+        }
     }
 
     @Test

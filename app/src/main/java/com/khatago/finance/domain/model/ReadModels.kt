@@ -96,7 +96,11 @@ data class ScheduleProgress(
     val overdueMinor: Long,
 ) {
     val percentLabel: String
-        get() = if (totalCount <= 0) "—" else "%.1f%%".format(paidCount * 100.0 / totalCount)
+        get() = if (totalCount <= 0) {
+            "—"
+        } else {
+            "%.1f%%".format(java.util.Locale.US, paidCount * 100.0 / totalCount)
+        }
 }
 
 /** Everything the dashboard shows, derived from one repository call so tiles cannot disagree. */

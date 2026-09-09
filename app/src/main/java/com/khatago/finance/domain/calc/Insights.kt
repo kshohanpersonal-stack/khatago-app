@@ -168,7 +168,8 @@ object InsightsCalculator {
         }
     }
 
-    internal fun formatPercent(value: Double): String = "%.0f%%".format(kotlin.math.abs(value))
+    internal fun formatPercent(value: Double): String =
+        "%.0f%%".format(java.util.Locale.US, kotlin.math.abs(value))
 }
 
 /**
@@ -228,7 +229,7 @@ object SnapshotCalculator {
             }
             score += savingsPoints
             reasons += if (savingsRate >= 0) {
-                "You kept ${"%.0f".format(savingsRate * 100)}% of what came in this month (+$savingsPoints)."
+                "You kept ${"%.0f".format(java.util.Locale.US, savingsRate * 100)}% of what came in this month (+$savingsPoints)."
             } else {
                 "You spent more than you earned this month (+0)."
             }
@@ -247,7 +248,8 @@ object SnapshotCalculator {
                 else -> 0
             }
             score += debtPoints
-            reasons += "What you owe is about ${"%.1f".format(months)} month(s) of income (+$debtPoints)."
+            val shownMonths = "%.1f".format(java.util.Locale.US, months)
+            reasons += "What you owe is about $shownMonths month(s) of income (+$debtPoints)."
         } else if (input.totalIOweMinor == 0L) {
             score += 25
             reasons += "No outstanding obligations recorded (+25)."

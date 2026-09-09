@@ -49,7 +49,7 @@ object AppDates {
             0 -> 12
             else -> hour24 % 12
         }
-        return "%d:%02d %s".format(hour, minute, suffix)
+        return "%d:%02d %s".format(java.util.Locale.US, hour, minute, suffix)
     }
 
     fun formatMonthYear(epochDay: Long): String = shortMonthYear.format(ofEpochDay(epochDay))
@@ -59,7 +59,8 @@ object AppDates {
     /** Bucket label for charts, e.g. `Feb 26`. */
     fun formatChartMonth(epochDay: Long): String {
         val date = ofEpochDay(epochDay)
-        return "%s %02d".format(date.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH), date.year % 100)
+        val month = date.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH)
+        return "%s %02d".format(java.util.Locale.US, month, date.year % 100)
     }
 
     /**

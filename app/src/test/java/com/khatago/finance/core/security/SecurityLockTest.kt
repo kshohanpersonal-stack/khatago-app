@@ -15,6 +15,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import java.util.Locale
 
 /**
  * The app lock: how a PIN is stored, and what happens when someone guesses.
@@ -31,6 +32,28 @@ import org.robolectric.annotation.Config
 class SecurityLockTest {
 
     private lateinit var context: Context
+
+    @Test
+    fun `the stored triple is ascii hex and verifies whatever the device locale is`() {
+        // The triple is written once and read back forever, so it must not depend on the phone's language.
+        // `"%02x".format(it)` used the default locale, which on a device set to Arabic renders digits with
+        // non-ASCII glyphs: the stored value would then fail its own hex parser and the PIN would lock the
+        // user out of their own ledger. Formatting is pinned to Locale.US, and this is the proof.
+        val saved = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("ar"))
+            val encoded = PinHasher.encode("4321")
+            assertTrue(
+                "expected algorithm:iterations:32 hex:64 hex, got $encoded",
+                Regex("^[A-Za-z0-9]+:\\d+:[0-9a-f]{32}:[0-9a-f]{64}$").matches(encoded),
+            )
+            assertTrue(PinHasher.matches("4321", encoded))
+            assertFalse(PinHasher.matches("1234", encoded))
+            assertNotEquals("a second encode must not reuse the salt", encoded, PinHasher.encode("4321"))
+        } finally {
+            Locale.setDefault(saved)
+        }
+    }
 
     @Before
     fun setUp() {
