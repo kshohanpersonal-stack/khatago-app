@@ -1,0 +1,5 @@
+mode: up-to-date
+file: app/schemas/com.khatago.finance.data.db.KhataGoDatabase/1.json
+run: 34309051362
+commit: 2fd04fa585a06a5e156b06b932e5a81d591e584e
+sha256: 7afa58cb5f10aa49908ff590508d773a2055e16971a4716c479786aa993d3f90
