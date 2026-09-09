@@ -1,0 +1,98 @@
+com.khatago.finance.core.CsvExportTest.newlines inside a note survive as a quoted field
+   org.junit.ComparisonFailure: expected:<line one[ line two]> but was:<line one[]>
+   org.junit.ComparisonFailure: expected:<line one[
+   line two]> but was:<line one[]>
+   at org.junit.Assert.assertEquals(Assert.java:117)
+   at org.junit.Assert.assertEquals(Assert.java:146)
+   at com.khatago.finance.core.CsvExportTest.newlines inside a note survive as a quoted field(CsvExportTest.kt:40)
+
+com.khatago.finance.core.money.MoneyCoreTest.multiplication overflow is refused
+   java.lang.IllegalArgumentException: Multiplication overflow: 500000000000000 x 3
+   java.lang.IllegalArgumentException: Multiplication overflow: 500000000000000 x 3
+   at com.khatago.finance.core.money.MoneyMinor.times(MoneyMinor.kt:44)
+   at com.khatago.finance.core.money.MoneyCoreTest.multiplication overflow is refused(MoneyCoreTest.kt:132)
+   at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+   at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+
+com.khatago.finance.core.money.MoneyCoreTest.currency symbol and spaces are tolerated because users type them
+   java.lang.AssertionError: expected:<1000> but was:<-1>
+   java.lang.AssertionError: expected:<1000> but was:<-1>
+   at org.junit.Assert.fail(Assert.java:89)
+   at org.junit.Assert.failNotEquals(Assert.java:835)
+   at org.junit.Assert.assertEquals(Assert.java:647)
+   at org.junit.Assert.assertEquals(Assert.java:633)
+
+com.khatago.finance.core.money.MoneyCoreTest.overpayment protection compares against the remaining limit exactly
+   java.lang.AssertionError
+   java.lang.AssertionError
+   at org.junit.Assert.fail(Assert.java:87)
+   at org.junit.Assert.assertTrue(Assert.java:42)
+   at org.junit.Assert.assertFalse(Assert.java:65)
+   at org.junit.Assert.assertFalse(Assert.java:75)
+
+com.khatago.finance.data.PaymentEngineTest.the derived total always equals the sum of the payment rows
+   java.lang.AssertionError: expected:<5000> but was:<3000>
+   java.lang.AssertionError: expected:<5000> but was:<3000>
+   at org.junit.Assert.fail(Assert.java:89)
+   at org.junit.Assert.failNotEquals(Assert.java:835)
+   at org.junit.Assert.assertEquals(Assert.java:647)
+   at org.junit.Assert.assertEquals(Assert.java:633)
+
+com.khatago.finance.data.PaymentEngineTest.deleting a payment repairs the installment line it was applied to
+   java.lang.AssertionError: only the down payment is left on the loan's own ledger expected:<200000> but was:<0>
+   java.lang.AssertionError: only the down payment is left on the loan's own ledger expected:<200000> but was:<0>
+   at org.junit.Assert.fail(Assert.java:89)
+   at org.junit.Assert.failNotEquals(Assert.java:835)
+   at org.junit.Assert.assertEquals(Assert.java:647)
+   at com.khatago.finance.data.PaymentEngineTest$deleting a payment repairs the installment line it was applied to$1.invokeSuspend(PaymentEngineTest.kt:290)
+
+com.khatago.finance.data.PaymentEngineTest.a loan down payment counts as paid once on both sides of the balance
+   java.lang.AssertionError: a settled loan must not be reported as outstanding expected:<0> but was:<200000>
+   java.lang.AssertionError: a settled loan must not be reported as outstanding expected:<0> but was:<200000>
+   at org.junit.Assert.fail(Assert.java:89)
+   at org.junit.Assert.failNotEquals(Assert.java:835)
+   at org.junit.Assert.assertEquals(Assert.java:647)
+   at com.khatago.finance.data.PaymentEngineTest$a loan down payment counts as paid once on both sides of the balance$1.invokeSuspend(PaymentEngineTest.kt:336)
+
+com.khatago.finance.data.PaymentEngineTest.an EMI down payment leaves the financed remainder payable and nothing more
+   java.lang.AssertionError: expected:<4000000> but was:<3600000>
+   java.lang.AssertionError: expected:<4000000> but was:<3600000>
+   at org.junit.Assert.fail(Assert.java:89)
+   at org.junit.Assert.failNotEquals(Assert.java:835)
+   at org.junit.Assert.assertEquals(Assert.java:647)
+   at org.junit.Assert.assertEquals(Assert.java:633)
+
+com.khatago.finance.data.PaymentEngineTest.editing an EMI plan keeps the payments and repairs the schedule lines
+   java.lang.AssertionError: expected:<300000> but was:<100000>
+   java.lang.AssertionError: expected:<300000> but was:<100000>
+   at org.junit.Assert.fail(Assert.java:89)
+   at org.junit.Assert.failNotEquals(Assert.java:835)
+   at org.junit.Assert.assertEquals(Assert.java:647)
+   at org.junit.Assert.assertEquals(Assert.java:633)
+
+com.khatago.finance.data.PaymentEngineTest.the three EMI derivations agree while the plan is still open
+   java.lang.AssertionError: expected:<54000000> but was:<48000000>
+   java.lang.AssertionError: expected:<54000000> but was:<48000000>
+   at org.junit.Assert.fail(Assert.java:89)
+   at org.junit.Assert.failNotEquals(Assert.java:835)
+   at org.junit.Assert.assertEquals(Assert.java:647)
+   at org.junit.Assert.assertEquals(Assert.java:633)
+
+com.khatago.finance.domain.calc.FinancialMathTest.overpayment is rejected with the ExceedsRemaining kind
+   java.lang.AssertionError
+   java.lang.AssertionError
+   at org.junit.Assert.fail(Assert.java:87)
+   at org.junit.Assert.assertTrue(Assert.java:42)
+   at org.junit.Assert.assertTrue(Assert.java:53)
+   at com.khatago.finance.domain.calc.FinancialMathTest.overpayment is rejected with the ExceedsRemaining kind(FinancialMathTest.kt:94)
+
+com.khatago.finance.domain.calc.FinancialMathTest.paid amounts on lines count before the obligation-level pool
+   java.lang.AssertionError: expected:<400> but was:<200>
+   java.lang.AssertionError: expected:<400> but was:<200>
+   at org.junit.Assert.fail(Assert.java:89)
+   at org.junit.Assert.failNotEquals(Assert.java:835)
+   at org.junit.Assert.assertEquals(Assert.java:647)
+   at org.junit.Assert.assertEquals(Assert.java:633)
+
+-- app/build/test-results/testDebugUnitTest: 12 failing of 93 tests in 5 class(es)
+== 12 failing of 93 tests across 5 result file(s)
