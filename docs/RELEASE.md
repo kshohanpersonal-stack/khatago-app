@@ -47,7 +47,9 @@ gradle :app:assembleRelease :app:bundleRelease
 # 4. Commit the Room schema export if kapt regenerated it, so the next migration has a diff to review:
 git add app/schemas && git status --short app/schemas
 #    (No local build available? CI carries the generated JSON out on the `room-schema-baseline` branch
-#    whenever the committed one is missing; fetch it with `git fetch origin room-schema-baseline`.)
+#    whenever the committed one is missing: `git fetch origin room-schema-baseline` and read CARRIER.txt
+#    there - it names the path the carrier took, including "no-schema-generated", because a carrier whose
+#    silence could mean either success or an empty find is not evidence of anything.)
 
 # 5. Tag and push. CI runs, and release.yml publishes a GitHub Release for a `v*` tag.
 git commit -am "release: 1.0.1"

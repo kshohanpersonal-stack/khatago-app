@@ -11,7 +11,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # ONLY so a red run can push its own diagnostics to the `ci-diagnostics` branch.
+  contents: write   # ONLY so a run can push its diagnosis to `ci-diagnostics`, and the generated
+                    # Room schema baseline to `room-schema-baseline` (the build job's carrier step).
                     # The Actions log and artefact hosts are unreachable from some networks (this
                     # project's development sandbox among them); `git fetch` never is. Nothing else in
                     # CI writes, and no workflow path pushes to main.
@@ -498,6 +499,65 @@ jobs:
 
       - name: Assemble release APK (unsigned — signing is configured only in release.yml)
         run: gradle --no-daemon :app:assembleRelease
+      # Room writes app/schemas/com.khatago.finance.data.db.KhataGoDatabase/1.json while kapt runs, and
+      # that file is the review artifact every future migration is checked against. It must never be
+      # handwritten, so the only way to obtain it from this sandbox is to carry it out of a real build:
+      # GitHub's artefact and log hosts are unreachable from here, plain git is not. The step publishes
+      # whatever it found - including "I found nothing", via CARRIER.txt - because a carrier whose silence
+      # is indistinguishable from success is not evidence of anything. Once the JSON is tracked in the repo
+      # the status becomes `already-tracked`, which is how the step retires with no follow-up edit.
+      - name: Carry the Room schema baseline home
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          gen=$(find app/schemas -name '*.json' 2>/dev/null | head -1 || true)
+          r=$(mktemp -d)
+          git init -q "$r"
+          git -C "$r" config user.name ci-diagnostics
+          git -C "$r" config user.email ci@localhost
+          git -C "$r" checkout -q -b room-schema-baseline
+          if [ -z "$gen" ]; then
+            echo "::warning::this build produced no Room schema JSON under app/schemas"
+            {
+              echo "mode: no-schema-generated"
+              echo "commit: $GITHUB_SHA"
+              echo "run: $GITHUB_RUN_ID"
+              echo "app/schemas contains:"
+              find app/schemas -type f | sed 's/^/  /'
+            } > "$r/CARRIER.txt"
+          elif git ls-files --error-unmatch "$gen" >/dev/null 2>&1; then
+            echo "schema baseline is already tracked - nothing to carry"
+            {
+              echo "mode: already-tracked"
+              echo "path: $gen"
+              echo "commit: $GITHUB_SHA"
+              echo "run: $GITHUB_RUN_ID"
+            } > "$r/CARRIER.txt"
+          else
+            mkdir -p "$r/$(dirname "$gen")"
+            cp "$GITHUB_WORKSPACE/$gen" "$r/$gen"
+            {
+              echo "mode: carried"
+              echo "path: $gen"
+              echo "bytes: $(wc -c < "$GITHUB_WORKSPACE/$gen" | tr -d ' ')"
+              echo "sha256: $(sha256sum "$GITHUB_WORKSPACE/$gen" | cut -c1-64)"
+              echo "commit: $GITHUB_SHA"
+              echo "run: $GITHUB_RUN_ID"
+            } > "$r/CARRIER.txt"
+          fi
+          git -C "$r" add -A
+          git -C "$r" commit -qm "room schema carrier $GITHUB_RUN_ID"
+          # A branch of its own, deliberately: ci-diagnostics is force-pushed by the diagnose job, and two
+          # publishers clobbering one branch has already cost this project a diagnosis.
+          if git -C "$r" push -q --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/room-schema-baseline; then
+            echo "PUBLISHED room-schema-baseline"
+          else
+            echo "::warning::could not publish room-schema-baseline; commit the schema after a local build"
+          fi
 
       - name: Formatting
         run: gradle --no-daemon spotlessCheck
