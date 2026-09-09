@@ -31,9 +31,15 @@ class MoneyCoreTest {
 
     @Test
     fun `currency symbol and spaces are tolerated because users type them`() {
+        // The symbol is decoration and is stripped wherever the user put it: this currency writes it in
+        // front, but people paste back whatever was on screen and phones autocomplete it at the end too.
         assertEquals(1000L, parse(" ৳10.00 "))
         assertEquals(1000L, parse("10.00৳"))
-        assertEquals(1000L, parse("10 00"))
+        assertEquals(1000L, parse("৳10.00৳"))
+        // A space is a thousands separator here, never a decimal mark: "10 00" is one thousand, not ten.
+        // Reading it the other way would rewrite what the user typed, which no parser in this app may do.
+        assertEquals(100_000L, parse("10 00"))
+        assertEquals(100_050L, parse("10 00.50"))
     }
 
     @Test
@@ -113,10 +119,14 @@ class MoneyCoreTest {
 
     @Test
     fun `overpayment protection compares against the remaining limit exactly`() {
+        // `this` is what has already been paid, the first argument is the whole obligation and the second
+        // is the payment being offered. The limit is INCLUSIVE: taking the paid total one paisa past it is
+        // an overpayment, landing exactly on it settles the record and must stay allowed.
         val paid = MoneyMinor.ofMinor(700L)
-        val remaining = MoneyMinor.ofMinor(300L)
-        assertTrue(paid.wouldExceed(remaining, MoneyMinor.ofMinor(1L)))
-        assertFalse(paid.wouldExceed(remaining, MoneyMinor.ofMinor(0L)))
+        val limit = MoneyMinor.ofMinor(1_000L)
+        assertTrue(paid.wouldExceed(limit, MoneyMinor.ofMinor(301L)))
+        assertFalse(paid.wouldExceed(limit, MoneyMinor.ofMinor(300L)))
+        assertFalse(paid.wouldExceed(limit, MoneyMinor.ZERO))
     }
 
     @Test
@@ -128,8 +138,12 @@ class MoneyCoreTest {
 
     @Test
     fun `multiplication overflow is refused`() {
-        expectIllegalArgument { MoneyMinor.ofMinor(500_000_000_000_000L).times(3) }
-        assertEquals(1_500_000_000_000_000L, MoneyMinor.ofMinor(500_000_000_000_000L).times(3).minor)
+        // MAX_MINOR is 10^15 and it is a hard ceiling, not a hint: above it a ledger amount is
+        // meaningless (and nearly always a fat-finger entry). So the cap itself is the boundary — the
+        // multiplication that lands exactly on it is fine, the one that steps past it throws.
+        val half = MoneyMinor.ofMinor(500_000_000_000_000L)
+        assertEquals(MoneyMinor.MAX_MINOR, half.times(2).minor)
+        expectIllegalArgument { half.times(3) }
     }
 
     // --- formatting -----------------------------------------------------------

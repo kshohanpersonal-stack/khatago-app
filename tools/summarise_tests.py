@@ -22,7 +22,9 @@ import sys
 import xml.etree.ElementTree as ET
 
 MESSAGE_CHARS = 420
-STACK_LINES = 5
+# Enough frames to reach the test's own line: the JUnit/Assert rows are noise, and a failure that
+# names no `FooTest.kt:NN` frame costs a whole CI round to re-derive by hand.
+STACK_LINES = 12
 
 
 def summarise(directory: str) -> tuple[int, int, int]:

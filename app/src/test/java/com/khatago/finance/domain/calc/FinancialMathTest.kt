@@ -90,7 +90,8 @@ class FinancialMathTest {
 
     @Test
     fun `overpayment is rejected with the ExceedsRemaining kind`() {
-        val result = PaymentValidation.validate(amountMinor = 401L, originalMinor = 1_000L, paidMinor = 500L)
+        // 500 of 1,000 is paid, so the largest allowed payment is 500: one paisa more is an overpayment.
+        val result = PaymentValidation.validate(amountMinor = 501L, originalMinor = 1_000L, paidMinor = 500L)
         assertTrue(result is PaymentValidation.Rejected)
         assertEquals(PaymentValidation.Kind.ExceedsRemaining, (result as PaymentValidation.Rejected).kind)
         assertTrue(result.message.isNotBlank())
@@ -171,12 +172,27 @@ class FinancialMathTest {
             line(1, -30, 500L, paid = 100L),
             line(2, 30, 500L),
         )
-        val allocated = InstallmentAllocator.allocate(lines, totalPaidMinor = 100L, todayEpochDay = today)
-        // Line 1 already has 100 paid directly, and the pool of 100 fills the rest of it: the
-        // obligation's paid total is honoured exactly, and no money is invented.
-        assertEquals(400L, allocated[0].allocatedMinor)
-        assertEquals(500L, InstallmentAllocator.remainingMinor(allocated))
-        assertEquals(500L, allocated.sumOf { it.allocatedMinor } + 0L)
+        // The obligation's paid total already CONTAINS the 100 booked against line 1: a payment recorded on
+        // an instalment is a payment on the obligation too. So line 1 is honoured out of the total and only
+        // what is left unassigned is free to move on. Feeding the full paid total into the pool as well
+        // would count that 100 twice and mark a line paid that nobody paid for.
+        val allocated = InstallmentAllocator.allocate(lines, totalPaidMinor = 300L, todayEpochDay = today)
+        assertEquals(300L, allocated[0].allocatedMinor)
+        assertEquals(0L, allocated[1].allocatedMinor)
+        assertEquals(300L, allocated.sumOf { it.allocatedMinor })
+        assertEquals(700L, InstallmentAllocator.remainingMinor(allocated))
+
+        // Nothing to spread: the paid total is exactly the 100 that line 1 already accounts for.
+        val nothingLeft = InstallmentAllocator.allocate(lines, totalPaidMinor = 100L, todayEpochDay = today)
+        assertEquals(100L, nothingLeft[0].allocatedMinor)
+        assertEquals(0L, nothingLeft[1].allocatedMinor)
+        assertEquals(100L, nothingLeft.sumOf { it.allocatedMinor })
+
+        // The spare money carries on down the schedule once line 1 is full, in order, and settles it.
+        val more = InstallmentAllocator.allocate(lines, totalPaidMinor = 600L, todayEpochDay = today)
+        assertTrue(more[0].isSettled)
+        assertEquals(100L, more[1].allocatedMinor)
+        assertEquals(600L, more.sumOf { it.allocatedMinor })
     }
 
     @Test

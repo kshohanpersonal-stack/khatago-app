@@ -34,7 +34,17 @@ data class MoneyMinor(val minor: Long) : Comparable<MoneyMinor> {
     fun subtractSaturating(other: MoneyMinor): MoneyMinor =
         if (other.minor >= minor) ZERO else ofMinor(minor - other.minor)
 
-    /** True when [payment] would take the amount past [limit] (used for overpayment protection). */
+    /**
+     * Overpayment protection. `this` is what has already been paid, [limit] is the whole obligation and
+     * [payment] is what the user wants to pay now: true when the payment takes the paid total *past* the
+     * limit. Paying exactly the limit settles the record and is therefore allowed — the comparison is
+     * `>`, never `>=`, and that boundary is what `MoneyCoreTest` pins down.
+     *
+     * `PaymentValidation.validate` in `domain/calc/FinancialMath.kt` enforces the same rule one layer up,
+     * on raw minor units and against the *remaining* amount (`payment > remaining`). Those are the same
+     * statement as long as `remaining` is derived as `original - paid`, so if either is ever changed,
+     * change the other: two definitions of "too much" is how an overpayment slips in through an edit.
+     */
     fun wouldExceed(limit: MoneyMinor, payment: MoneyMinor): Boolean =
         addMinor(minor, payment.minor) > limit.minor
 

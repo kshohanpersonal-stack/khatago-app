@@ -23,19 +23,25 @@ interface StatsDao {
      * Total the user owes: unsettled remainders across all four "I owe" sources.
      *
      * Down payments follow **one** convention here and in `PayableResolver.resolve`, `LoanDao`,
-     * `EmiDao` and the CSV export, and it is the one every balance in the app derives from:
+     * `EmiDao`, `BackupValidation` and the CSV export, and every balance in the app derives from it:
      *
-     *     original = totalPayable + downPayment        (both loan and EMI)
-     *     paid     = downPayment + SUM(payments)       (both)
+     *     paid      = downPayment + SUM(payments)        (both plans)
      *     remaining = original - paid
      *
-     * The two plans differ only in what `totalPayable` *means* — a loan's excludes the down payment
-     * (so its schedule is generated from `totalPayable`), an EMI's includes it (so its schedule is
-     * generated from `totalPayable - downPayment`). That is why the loan branch adds `downPayment` to
-     * the total and leaves the paid sum alone, while the EMI branch is written with `downPayment` on
-     * both sides. Both spell the same identity out instead of cancelling it, because the cancelled
-     * form is what makes a reader "simplify" one side and double-count a down payment — the single
-     * most expensive arithmetic bug this app could ship.
+     * What differs is `original`, because `totalPayableMinor` means something different per plan, and
+     * that is the trap:
+     *
+     *     loan: original = totalPayable + downPayment    (a loan's totalPayable EXCLUDES the down)
+     *     emi:  original = totalPayable                  (an EMI's totalPayable already INCLUDES it)
+     *
+     * A loan's schedule is generated from `totalPayable`, so its headline has to add the down payment
+     * back to reach the whole cost. An EMI's schedule is generated from `totalPayable - downPayment`
+     * because the total already contains the down payment, and adding it to the total as well counts it
+     * twice and makes the plan look one instalment bigger than the user's. Omitting it from the paid
+     * side is the mirror-image mistake, and the more dangerous one: a loan whose EMIs are all paid keeps
+     * reporting its down payment as outstanding, so its tile can never reach zero. Both halves are
+     * spelled out instead of cancelled, because the cancelled form is what invites a reader to
+     * "simplify" one side and double-count a down payment.
      *
      * A down payment is metadata, never a `payments` row (the form says so in its helper). If a user
      * also records it as a payment, it is counted as paid twice — and the payment guard, which uses
@@ -48,11 +54,12 @@ interface StatsDao {
                     WHERE p.payableType = 'shop_credit' AND p.payableId = c.id) AS remaining
             FROM shop_credits c WHERE c.cancelled = 0
             UNION ALL
-            SELECT (l.totalPayableMinor + l.downPaymentMinor) - (SELECT COALESCE(SUM(p.amountMinor), 0)
-                    FROM payments p WHERE p.payableType = 'loan' AND p.payableId = l.id) AS remaining
+            SELECT (l.totalPayableMinor + l.downPaymentMinor) - (l.downPaymentMinor +
+                    (SELECT COALESCE(SUM(p.amountMinor), 0) FROM payments p
+                     WHERE p.payableType = 'loan' AND p.payableId = l.id)) AS remaining
             FROM loans l WHERE l.cancelled = 0
             UNION ALL
-            SELECT (e.totalPayableMinor + e.downPaymentMinor) - (e.downPaymentMinor +
+            SELECT e.totalPayableMinor - (e.downPaymentMinor +
                     (SELECT COALESCE(SUM(p.amountMinor), 0) FROM payments p
                      WHERE p.payableType = 'emi' AND p.payableId = e.id)) AS remaining
             FROM emi_purchases e WHERE e.cancelled = 0
@@ -147,8 +154,9 @@ interface StatsDao {
     @Query(
         """
         SELECT COALESCE(SUM(remaining), 0) FROM (
-            SELECT (l.totalPayableMinor + l.downPaymentMinor) - (SELECT COALESCE(SUM(p.amountMinor), 0)
-                    FROM payments p WHERE p.payableType = 'loan' AND p.payableId = l.id) AS remaining
+            SELECT (l.totalPayableMinor + l.downPaymentMinor) - (l.downPaymentMinor +
+                    (SELECT COALESCE(SUM(p.amountMinor), 0) FROM payments p
+                     WHERE p.payableType = 'loan' AND p.payableId = l.id)) AS remaining
             FROM loans l WHERE l.cancelled = 0
         )
         WHERE remaining > 0
@@ -159,7 +167,7 @@ interface StatsDao {
     @Query(
         """
         SELECT COALESCE(SUM(remaining), 0) FROM (
-            SELECT (e.totalPayableMinor + e.downPaymentMinor) - (e.downPaymentMinor +
+            SELECT e.totalPayableMinor - (e.downPaymentMinor +
                     (SELECT COALESCE(SUM(p.amountMinor), 0) FROM payments p
                      WHERE p.payableType = 'emi' AND p.payableId = e.id)) AS remaining
             FROM emi_purchases e WHERE e.cancelled = 0
@@ -268,11 +276,12 @@ interface StatsDao {
                     WHERE p.payableType = 'shop_credit' AND p.payableId = c.id) AS remaining
             FROM shop_credits c WHERE c.cancelled = 0
             UNION ALL
-            SELECT (l.totalPayableMinor + l.downPaymentMinor) - (SELECT COALESCE(SUM(p.amountMinor), 0)
-                    FROM payments p WHERE p.payableType = 'loan' AND p.payableId = l.id) AS remaining
+            SELECT (l.totalPayableMinor + l.downPaymentMinor) - (l.downPaymentMinor +
+                    (SELECT COALESCE(SUM(p.amountMinor), 0) FROM payments p
+                     WHERE p.payableType = 'loan' AND p.payableId = l.id)) AS remaining
             FROM loans l WHERE l.cancelled = 0
             UNION ALL
-            SELECT (e.totalPayableMinor + e.downPaymentMinor) - (e.downPaymentMinor +
+            SELECT e.totalPayableMinor - (e.downPaymentMinor +
                     (SELECT COALESCE(SUM(p.amountMinor), 0) FROM payments p
                      WHERE p.payableType = 'emi' AND p.payableId = e.id)) AS remaining
             FROM emi_purchases e WHERE e.cancelled = 0

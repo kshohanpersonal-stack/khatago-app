@@ -287,11 +287,15 @@ class PaymentEngineTest {
         // "paid" for money that no longer exists is a schedule that contradicts its own obligation.
         assertEquals(0L, database.paymentDao().paidAtLine(lineId))
         assertEquals(0L, database.installmentDao().findById(lineId)?.paidMinor ?: 0L)
+        // The down payment is metadata on the plan, never a `payments` row, so `PaymentDao.paidTotal` is
+        // empty again once the row is gone — that is the raw ledger, and it is exactly why the app's paid
+        // figure is derived one layer up. Assert the number the engine itself publishes.
         assertEquals(
             "only the down payment is left on the loan's own ledger",
             200_000L,
-            database.paymentDao().paidTotal("loan", loanId),
+            payments.resolveOnce(PayableType.Loan, loanId)!!.recordedPaidMinor,
         )
+        assertEquals(0L, database.paymentDao().paidTotal("loan", loanId))
     }
 
     // --- 5: down payments -------------------------------------------------------
@@ -313,11 +317,14 @@ class PaymentEngineTest {
             ),
         )
 
-        // The convention, applied identically by the engine and by every aggregate query:
-        //   original = totalPayable + downPayment, paid = downPayment + SUM(payments),
+        // The convention (docs/MONEY.md section 6), applied identically by the engine and by every
+        // aggregate query:
+        //   paid      = downPayment + SUM(payments)
         //   remaining = original - paid  ->  exactly the sum of the schedule.
-        // A loan's totalPayable excludes the down payment; an EMI's includes it, which is why the EMI
-        // branch below carries downPayment on both sides of the subtraction.
+        // `original` is the only part that differs per plan: a loan's totalPayable EXCLUDES the down
+        // payment so its original is `totalPayable + downPayment`, while an EMI's totalPayable already
+        // INCLUDES it so its original is just `totalPayable`. Adding it to an EMI's total as well would
+        // count the down payment twice and inflate the plan by one instalment.
         val snapshot = payments.resolveOnce(PayableType.Loan, loanId)!!
         assertEquals(1_400_000L, snapshot.originalMinor)
         assertEquals(200_000L, snapshot.recordedPaidMinor)
@@ -360,18 +367,20 @@ class PaymentEngineTest {
                 firstDueDateEpochDay = today + 10L,
             ),
         )
+        // totalPayable (3,600,000) already contains the 400,000 down payment, so it IS the original; the
+        // paid side carries the down payment, which leaves the eight EMIs of 400,000 = 3,200,000 to pay.
         val snapshot = payments.resolveOnce(PayableType.Emi, emiId)!!
-        assertEquals(4_000_000L, snapshot.originalMinor)
+        assertEquals(3_600_000L, snapshot.originalMinor)
         assertEquals(400_000L, snapshot.recordedPaidMinor)
-        assertEquals(3_600_000L, snapshot.remainingMinor)
+        assertEquals(3_200_000L, snapshot.remainingMinor)
 
         assertTrue(
-            payments.record(PayableType.Emi, emiId, 3_600_001L, today, "Cash", null, null)
+            payments.record(PayableType.Emi, emiId, 3_200_001L, today, "Cash", null, null)
                 is PaymentOutcome.Rejected,
         )
         // The "I owe" headline must agree with the snapshot to the paisa.
         assertTrue(
-            payments.record(PayableType.Emi, emiId, 3_600_000L, today, "Cash", null, null)
+            payments.record(PayableType.Emi, emiId, 3_200_000L, today, "Cash", null, null)
                 is PaymentOutcome.Recorded,
         )
         assertEquals(0L, database.statsDao().observeEmiOutstanding().first())
@@ -401,12 +410,15 @@ class PaymentEngineTest {
         )
         payments.record(PayableType.Emi, emiId, 12_000_000L, today, "Cash", null, null)
 
-        // original 72,000,000 - paid (6,000,000 + 12,000,000) = 54,000,000 = the nine remaining EMIs.
+        // original 66,000,000 (the down payment is already inside it) - paid (6,000,000 down +
+        // 12,000,000 in two EMIs) = 48,000,000 = the eight EMIs still owed. Treating the down payment as
+        // an extra instalment on top — the loan's convention, wrong for an EMI — is what used to make the
+        // dashboard tile disagree with the EMI module by exactly 6,000,000.
         val snapshot = payments.resolveOnce(PayableType.Emi, emiId)!!
-        assertEquals(54_000_000L, snapshot.remainingMinor)
-        assertEquals(54_000_000L, database.emiDao().observeOutstanding().first())
-        assertEquals(54_000_000L, database.statsDao().observeEmiOutstanding().first())
-        assertEquals(54_000_000L, database.statsDao().observeTotalIOwe().first())
+        assertEquals(48_000_000L, snapshot.remainingMinor)
+        assertEquals(48_000_000L, database.emiDao().observeOutstanding().first())
+        assertEquals(48_000_000L, database.statsDao().observeEmiOutstanding().first())
+        assertEquals(48_000_000L, database.statsDao().observeTotalIOwe().first())
     }
 
     // --- 6: no stored balance can drift ----------------------------------------
@@ -421,10 +433,17 @@ class PaymentEngineTest {
         assertEquals(6_000L, paidTotal(creditId))
         assertEquals(4_000L, payments.resolveOnce(PayableType.ShopCredit, creditId)!!.remainingMinor)
 
-        payments.delete(rows.first())
-        assertEquals(5_000L, database.paymentDao().findForPayable("shop_credit", creditId).sumOf { it.amountMinor })
-        assertEquals(5_000L, paidTotal(creditId))
-        assertEquals(5_000L, 10_000L - payments.resolveOnce(PayableType.ShopCredit, creditId)!!.remainingMinor)
+        // `findForPayable` returns newest first, so the test must not assume which row `first()` is: the
+        // property is that all three derivations move together with the surviving rows, for any row at all.
+        val removed = rows.first()
+        payments.delete(removed)
+        val survivors = database.paymentDao().findForPayable("shop_credit", creditId)
+        assertEquals(6_000L - removed.amountMinor, survivors.sumOf { it.amountMinor })
+        assertEquals(survivors.sumOf { it.amountMinor }, paidTotal(creditId))
+        assertEquals(
+            survivors.sumOf { it.amountMinor },
+            10_000L - payments.resolveOnce(PayableType.ShopCredit, creditId)!!.remainingMinor,
+        )
     }
 
     @Test
@@ -513,7 +532,9 @@ class PaymentEngineTest {
             surviving.single().installmentId,
         )
         // …while the money itself, and the schedule's paid position, stay correct.
-        assertEquals(300_000L, database.paymentDao().paidTotal("emi", emiId))
+        // 200,000 down + the one 100,000 payment that survived the rebuild. The raw ledger holds only the
+        // payment, so the obligation-level figure is the one that has to be asserted here.
+        assertEquals(300_000L, payments.resolveOnce(PayableType.Emi, emiId)!!.recordedPaidMinor)
         assertEquals(
             900_000L,
             payments.resolveOnce(PayableType.Emi, emiId)!!.remainingMinor,

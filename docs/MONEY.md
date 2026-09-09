@@ -36,7 +36,8 @@ plain field, and the guard on construction is more valuable than the allocation 
 | `"10.005"` in a 2-decimal currency | `Invalid(…, TOO_PRECISE)` — **never silently rounded** |
 | `"0"` with `allowZero = false` | `Invalid(…, ZERO_NOT_ALLOWED)` |
 | 40 digits | `Invalid(…, TOO_LARGE)` |
-| `" ৳10.00 "`, `"10,000.50"` | `Success` (symbol, spaces and grouping glyphs are stripped) |
+| `" ৳10.00 "`, `"10,000.50"`, `"10.00৳"` | `Success` — the symbol, spaces and grouping glyphs are stripped wherever they sit |
+| `"10 00"` | `Success` as **৳1,000.00** — a space is a thousands separator, never a decimal mark |
 
 Both properties matter: a form can show the message verbatim, and no caller can quietly decide that
 rounding half a poisha was fine.
@@ -106,26 +107,33 @@ be free to disagree with the engine, and the engine is the thing that writes.
 A down payment is **metadata on the plan**, never a `payments` row (the form's helper states this, so a
 user does not "helpfully" record it twice).
 
-Both plans answer the same three questions the same way:
+The **paid** side is identical for both plans and never varies:
 
 ```
-original  = totalPayableMinor + downPaymentMinor
 paid      = downPaymentMinor + SUM(payments)
 remaining = original - paid
 ```
 
-What differs is what `totalPayableMinor` *means*, and that is the trap:
+What differs is `original`, because `totalPayableMinor` means something different per plan, and that is the
+trap:
 
-| Plan | `totalPayableMinor` | Schedule generated from | Consequence |
+| Plan | `totalPayableMinor` | `original` | Schedule generated from |
 |---|---|---|---|
-| **Loan** | **excludes** the down payment (principal + interest) | `totalPayableMinor` | adding `downPayment` to the total is what stops the tile ignoring money already paid |
-| **EMI** | **includes** the down payment (whole cost of the purchase) | `totalPayableMinor - downPaymentMinor` | `downPayment` appears on **both** sides of the subtraction and must not be cancelled |
+| **Loan** | **excludes** the down payment (principal + interest) | `totalPayableMinor + downPaymentMinor` | `totalPayableMinor` |
+| **EMI** | **includes** the down payment (whole cost of the purchase) | `totalPayableMinor` | `totalPayableMinor - downPaymentMinor` |
 
-Writing the identity out (rather than simplifying `+ down - down` to nothing) is what `StatsDao.kt`,
-`EmiDao.kt`, `LoanDao.kt`, `PayableResolver` and the CSV export all do, in the same shape, so a reader can
-compare them side by side. `data/PaymentEngineTest.kt` asserts the three EMI derivations agree while a plan
-is open **and** when it settles — that is where a "simplified" query silently double-counts a down payment
-and shows a smaller balance than the user owes.
+The EMI row is where a down payment is double-counted in practice. Its `totalPayable` already contains the
+down payment, so `+ downPayment` on the left of the subtraction makes the plan look one instalment bigger
+than the user's (a ৳6,60,000 fridge with a ৳60,000 down payment would show ৳6,60,000 still owed after the
+down payment, when ten EMIs of ৳60,000 are exactly ৳6,00,000). The loan has the opposite hazard: its
+`totalPayable` excludes the down payment, so a query that subtracts only `SUM(payments)` keeps reporting the
+down payment as outstanding and the plan never settles.
+
+Both halves are written out instead of cancelled, and `StatsDao.kt`, `EmiDao.kt`, `LoanDao.kt`,
+`BackupValidation`, `PayableResolver` and the CSV export all spell them out in the same shape, so a reader
+can compare them side by side. `data/PaymentEngineTest.kt` asserts the three EMI derivations agree while a
+plan is open **and** when it settles, and that a settled loan reports zero on the dashboard tile — those are
+exactly the two mistakes above.
 
 A cancelled plan's down payment stays cancelled: it is excluded from every total by `WHERE cancelled = 0`.
 
@@ -138,9 +146,11 @@ A cancelled plan's down payment stays cancelled: it is excluded from every total
   **last** line (a balloon instalment). If only a total is given, the even split's remainder lands on the last
   line. A schedule's amounts therefore always sum to the plan total exactly.
 - `InstallmentAllocator.allocate(lines, totalPaid, today)` applies an obligation's paid total
-  chronologically and greedily, with money paid *directly at a line* counting first. `sum(allocated)` always
-  equals the obligation's paid total, which is the property that keeps the schedule and the headline in
-  agreement.
+  chronologically and greedily, with money paid *directly at a line* counting first. Those line figures are a
+  **subset** of `totalPaid` (a payment against an instalment is also a payment against the obligation), so the
+  pool that spreads over the schedule is `totalPaid - SUM(lines' own paid)`. `sum(allocated)` therefore equals
+  the obligation's paid total instead of exceeding it, which is the property that keeps the schedule and the
+  headline in agreement.
 - Per-line `paidMinor` is display state. The authoritative paid total is always the payments table (plus the
   down payment), never `SUM(installments.paidMinor)`.
 
@@ -174,4 +184,6 @@ export from a future version cannot be mistaken for the current shape (see
 - rounding in a form (`MoneyParseResult` rejects the input instead);
 - netting "I owe" against "I am owed";
 - currency conversion of any kind;
-- "simplifying" `+ downPayment − downPayment` in a query.
+- "simplifying" a down payment in or out of a query. `original` is `totalPayable + downPayment` for a
+  loan and plain `totalPayable` for an EMI (§6): a query that "harmonises" the two branches is wrong
+  for one of them, and the totals silently disagree with the module screen.

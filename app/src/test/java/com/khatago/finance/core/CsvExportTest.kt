@@ -35,8 +35,9 @@ class CsvExportTest {
         val value = "line one\nline two"
         val escaped = CsvWriter().escape(value)
         assertTrue(escaped.startsWith("\"") && escaped.endsWith("\""))
-        val quoted = escaped.replace("\"", "\"\"")
-        val line = "a,b\n" + quoted + ",z"
+        // `escape` already doubled any embedded quote and wrapped the field, so its output *is* the CSV
+        // text: escaping it a second time would test the reader against a file no writer produces.
+        val line = "a,b" + CsvWriter.CRLF + escaped + ",z" + CsvWriter.CRLF
         assertEquals(value, CsvWriter.parse(line)[1][0])
     }
 

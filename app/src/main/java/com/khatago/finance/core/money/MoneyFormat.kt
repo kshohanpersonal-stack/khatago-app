@@ -117,9 +117,14 @@ sealed interface MoneyParseResult {
             if (input.isEmpty()) {
                 return Invalid("Enter an amount.", Kind.EMPTY)
             }
+            // Spaces, grouping glyphs and the currency symbol are decoration. Users paste back what the
+            // app itself rendered ("৳1,234.50") or type the symbol wherever they happen to see it, so it
+            // is stripped on *either* side — not only on the side this currency writes it — because a
+            // symbol can never be part of a number and removing one cannot lose information. A space, in
+            // contrast, is only ever a thousands separator here, never a decimal mark: "10 00" is ৳1,000,
+            // and guessing the other way would silently rewrite what the user meant.
             val normalized = input.replace(" ", "").replace(currency.grouping.toString(), "")
-                .removePrefix(currency.symbol)
-                .let { if (!currency.symbolBefore) it.removeSuffix(currency.symbol) else it }
+                .removePrefix(currency.symbol).removeSuffix(currency.symbol)
                 .replace(currency.decimalMark, '.')
             if (normalized.startsWith("-")) {
                 return Invalid("An amount cannot be negative here. Use a payment to reduce a balance.", Kind.NEGATIVE)

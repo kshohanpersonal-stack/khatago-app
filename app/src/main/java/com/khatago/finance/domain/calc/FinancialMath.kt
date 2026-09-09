@@ -103,8 +103,14 @@ sealed interface PaymentValidation {
  *
  * Allocation order is chronological and greedy (installment 1 fills first). This is the same
  * convention banks use when they apply a payment to a loan, and it has the property that matters
- * most here: the sum of the allocations always equals the obligation's paid total, so the
- * schedule and the headline balance can never disagree.
+ * most here: the sum of the allocations never exceeds the obligation's paid total (on anything this
+ * app writes), so the schedule and the headline balance can never disagree.
+ *
+ * A line's own `paidMinor` is **part of** that paid total, never an addition to it: every payment
+ * recorded against an installment is also a payment against the obligation, so the money left to
+ * spread over the schedule is `totalPaidMinor - SUM(lines' own paid)`. Feeding the whole paid total
+ * into the pool as well would count line payments twice and show instalments as settled that were
+ * never paid for.
  */
 data class AllocatedInstallment(
     val installment: Installment,
@@ -128,7 +134,12 @@ object InstallmentAllocator {
         val ordered = installments.sortedWith(
             compareBy({ it.dueDateEpochDay }, { it.number }),
         )
-        var pool = totalPaidMinor
+        // The obligation's paid total already contains every payment that was booked against a line, so
+        // the money still free to move across the schedule is what is left after those lines have been
+        // honoured. Clamped at zero rather than allowed to go negative: a restored file can carry line
+        // figures the ledger does not support, and in that case the lines simply keep what they say.
+        val paidOnLines = installments.sumOf { if (it.paidMinor > 0L) it.paidMinor else 0L }
+        var pool = if (totalPaidMinor > paidOnLines) totalPaidMinor - paidOnLines else 0L
         return ordered.map { installment ->
             // Money paid directly at the installment line counts first; the rest comes from the
             // obligation-level pool.
