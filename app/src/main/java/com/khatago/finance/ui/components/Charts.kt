@@ -287,6 +287,12 @@ fun DonutChart(
             val stroke = 16.dp.toPx()
             val inset = stroke / 2f
             var startAngle = -90f
+            // The ring is inset by half the stroke so the pen never leaves the canvas, and the
+            // geometry is hoisted out of the call: writing `size = Size(size.width - stroke, …)`
+            // puts DrawScope's `size` and the parameter name in one expression, which the compiler
+            // refuses to resolve.
+            val ringTopLeft = Offset(inset, inset)
+            val ringSize = Size(size.width - stroke, size.height - stroke)
             slices.forEach { slice ->
                 val sweep = 360f * (slice.valueMinor.toFloat() / total.toFloat()) * progress.value
                 drawArc(
@@ -294,10 +300,8 @@ fun DonutChart(
                     startAngle = startAngle,
                     sweepAngle = (sweep - 2f).coerceAtLeast(0.6f),
                     useCenter = false,
-                    // radius + centre rather than topLeft + size: passing `size` by name next to
-                    // DrawScope's own `size` makes `drawArc`'s two overloads equally applicable.
-                    center = Offset(inset + (size.width - stroke) / 2f, inset + (size.height - stroke) / 2f),
-                    radius = (size.width - stroke) / 2f,
+                    topLeft = ringTopLeft,
+                    size = ringSize,
                     style = Stroke(width = stroke, cap = StrokeCap.Round),
                 )
                 startAngle += sweep

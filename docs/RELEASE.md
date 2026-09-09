@@ -138,6 +138,7 @@ git show FETCH_HEAD:rev.txt        # which commit the diagnostics belong to — 
 git show FETCH_HEAD:report.md      # every `e:` line of every probe, grouped, plus the task headers
 git show FETCH_HEAD:p1.log         | less   # the whole probe: compileDebugKotlin with kapt disabled
 git show FETCH_HEAD:p2.log         | less   # compileDebugUnitTestKotlin, same treatment: test sources too
+git show FETCH_HEAD:p3.log         | less   # compileReleaseKotlin: the variant an APK is built from
 git show FETCH_HEAD:status.txt     # exit code, line count and diagnostic count per probe
 git show FETCH_HEAD:tools.txt      # which gradle/java actually ran
 git show FETCH_HEAD:tests.log      | less   # the build job's test step, verbatim, when it got that far
@@ -167,18 +168,24 @@ reference somewhere in ~90 files) and not the file, and re-running the same task
 same line again. The fix is to make the same sources compile through a path that does report diagnostics.
 
 The build itself never disables kapt — `compileDebugKotlin` runs after it, Room's processor runs, and the
-APK needs both. The `diagnose-compile` job re-compiles the same sources four ways, as four explicit steps
-inside one loop over a `|`-delimited table (never a shell loop over a task list fed by `while read`: Gradle
-reads stdin, so such a loop swallows its own input and the remaining probes silently do not run). Probes 1
-and 2 run `:app:compileDebugKotlin` and `:app:compileDebugUnitTestKotlin` through an init script that sets
-`enabled = false` on every `kapt*` task — same sources, same classpath, no stub mode — which is the path
-that prints `file:line:col`, and it is the only path that has ever produced an actionable diagnosis here.
-Probes 3 and 4 re-run the stub task with incremental compilation off and with the configuration cache off,
-to rule those mechanisms in or out. Each probe writes its full output to `$GITHUB_WORKSPACE/.diag/pN.log`
-(the workspace, not `/tmp`: the earlier habit of handing files between steps through `/tmp` lost a
-diagnosis three times), and the job publishes the whole directory after every probe so a cancelled run
-still carries what has been learned. Nothing here is a build: the real job still runs kapt, Room and the
-tests, and the job is named for what it produces.
+APK needs both. The `diagnose-compile` job runs three probes, **one workflow step each, and every step
+publishes before the next one starts** — because run 34291945797 put all four probes of the previous
+design inside a single step, that step was terminated immediately after probe 1, and the branch received a
+report whose last line was `--- probe 1` with no exit code: the whole `p2` probe, which is the only place
+a broken *test* source appears, never reached anybody. Never a shell loop over a task list fed by
+`while read`, either: Gradle reads stdin, so such a loop swallows its own input and the remaining probes
+silently do not run.
+
+Probe 1 compiles `:app:compileDebugKotlin` and probe 2 `:app:compileDebugUnitTestKotlin`, both through an
+init script that sets `enabled = false` on every `kapt*` task — same sources, same classpath, no stub mode —
+which is the path that prints `file:line:col`, and the only one that has ever produced an actionable
+diagnosis here. Probe 3 compiles `:app:compileReleaseKotlin` for the same reason: the release variant must
+build, and no other step proves it compiles. The two older probes (the stub task with incremental
+compilation off, and with the configuration cache off) are gone: over nine rounds they never printed a thing
+the kapt-less probes did not, and a probe that cannot name a file is only time in which the job can be cut
+off. Each probe writes its full output to `$GITHUB_WORKSPACE/.diag/pN.log` (the workspace, not `/tmp`:
+handing files between steps through `/tmp` lost a diagnosis three times). Nothing here is a build: the real
+job still runs kapt, Room and the tests, and the job is named for what it produces.
 
 Once the diagnostics are readable, the remaining skill is *believing* them. `Unresolved reference` inside a
 file whose own top-level types are all missing means the file failed to parse, not that the reference is

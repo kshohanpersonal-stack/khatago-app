@@ -21,7 +21,7 @@ import com.khatago.finance.container
  */
 @Composable
 inline fun <reified VM : ViewModel> khataGoViewModel(
-    @DisallowComposableCalls crossinline create: (AppContainer) -> VM,
+    crossinline create: @DisallowComposableCalls (AppContainer) -> VM,
 ): VM {
     val container = LocalContext.current.container
     val factory = remember(container) {

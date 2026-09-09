@@ -148,26 +148,22 @@ jobs:
           echo "publisher-ok; job=$GITHUB_JOB; gradle=$(command -v gradle || echo MISSING)" > "$d/publisher-note.md"
           "$d/publish.sh"
 
-      # Five explicit gradle invocations, never a loop over a task list: a `while read ... done < list`
-      # loop whose body runs Gradle has Gradle consume the loop's own stdin, so four of five probes
-      # silently never ran and the report read "no diagnostics anywhere".
+      # One step per probe, each publishing when it finishes - see the note on the probe steps below.
+      # Never a `while read ... done < list` loop around Gradle: Gradle reads stdin, so such a loop makes
+      # Gradle swallow the loop's own input and the remaining probes silently never run.
       #
       # `e: Could not load module <Error module>` from the build job is emitted when something resolves
       # to an *error descriptor* (a reference to a type or member that does not exist); in stub-generation
       # mode kapt substitutes that one line for the compiler's real diagnostics, so no file:line ever
       # reaches stdout. The kapt-less probes below are the path that prints file:line:col. The build job
       # itself still runs kapt, Room, the tests and both assemble tasks: nothing here weakens CI.
-      - name: Probe the compiler four ways
+      - name: Prepare the probe harness
         shell: bash
         continue-on-error: true
         run: |
           set -uo pipefail
-          exec 5>> "$GITHUB_WORKSPACE/.diag/trace.txt"
-          BASH_XTRACEFD=5
-          set -x
           d=$GITHUB_WORKSPACE/.diag
           mkdir -p "$d"
-          printf 'gradle-before\n' > "$d/gradle-before.txt"
           cat > "$d/no-kapt.init.gradle.kts" <<'INITEOF'
           gradle.beforeProject {
               tasks.matching { it.name.startsWith("kapt") }.configureEach { enabled = false }
@@ -181,44 +177,101 @@ jobs:
             echo "# KhataGo compile diagnostics for run $GITHUB_RUN_ID"
             echo
             echo '```'
-            cat "$d/tools.txt" 2>/dev/null
+            cat "$d/tools.txt"
             echo '```'
             echo
           } >> "$d/report.md"
-          # Publish once before any long-running work: a report that says "gradle: MISSING" with four
-          # empty probe sections is worth more than a perfect report whose step died before pushing.
           echo "probes starting" > "$d/status.txt"
+          # Publish before any long-running work: a report that says "gradle: MISSING" is worth more
+          # than a perfect report whose step died before pushing.
           "$d/publish.sh" || echo "early publish failed"
-          for spec in \
-            "1|compileDebugKotlin, kapt tasks disabled|-I $d/no-kapt.init.gradle.kts|:app:compileDebugKotlin" \
-            "2|compileDebugUnitTestKotlin, kapt tasks disabled|-I $d/no-kapt.init.gradle.kts|:app:compileDebugUnitTestKotlin" \
-            "3|stub task, incremental compilation off|-Pkotlin.incremental=false -Pkotlin.incremental.useModuleDetection=false|:app:kaptGenerateStubsDebugKotlin" \
-            "4|stub task, no configuration cache|--no-configuration-cache|:app:kaptGenerateStubsDebugKotlin"; do
-            IFS='|' read -r n label args task <<EOF
-          $spec
-          EOF
-            echo "--- probe $n: $label"
-            # `gradle` is the distribution installed by gradle/actions/setup-gradle; if that is not on
-            # PATH here the log says so instead of pretending the build was clean.
-            # shellcheck disable=SC2086
-            gradle --no-daemon --console=plain --stacktrace $args "$task" < /dev/null > "$d/p$n.log" 2>&1
-            rc=$?
-            {
-              echo "## Probe $n - $label"
-              echo
-              echo "exit=$rc log_lines=$(grep -c "" "$d/p$n.log" 2>/dev/null) diagnostics=$(grep -cE '^(e: |w: file:)' "$d/p$n.log" 2>/dev/null)"
-              echo
-              echo '```'
-              grep -hE "^(e: |w: file:)|^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)|Caused by:" "$d/p$n.log" 2>/dev/null | head -45
-              echo "--- raw tail"
-              tail -70 "$d/p$n.log" 2>/dev/null
-              echo '```'
-              echo
-            } >> "$d/report.md"
-            echo "probe$n exit=$rc" >> "$d/status.txt"
-          done
-          set +x
+
+      # One step per probe, and each one publishes when it finishes. The previous shape ran all four
+      # probes inside one step, and in run 34291945797 that step was terminated right after probe 1:
+      # the report showed `--- probe 1` as its last line with no exit code, and probes 2 to 4 - including
+      # the unit-test compile, which is the only place a broken *test* source shows up - never reached
+      # the branch. A step that publishes its own result cannot lose the next one's.
+      #
+      # Probes 3 and 4 of that design (the stub task with incremental compilation off, and with no
+      # configuration cache) are gone on purpose: across nine rounds they never printed anything the
+      # kapt-less probes did not, and every probe that cannot report a file:line is time in which the job
+      # can be cut off. The release compile takes their place, because phase 4 of this work needs the
+      # release variant to compile and nothing else here proves it. kapt itself stays enabled in the real
+      # build job: Room's processor and the APK need it, and no probe here weakens CI.
+      - name: "Probe 1 - compileDebugKotlin with kapt disabled"
+        shell: bash
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          d=$GITHUB_WORKSPACE/.diag
+          gradle --no-daemon --console=plain --stacktrace -I "$d/no-kapt.init.gradle.kts" \
+            :app:compileDebugKotlin </dev/null > "$d/p1.log" 2>&1
+          rc=$?
+          {
+            echo "## Probe 1 - compileDebugKotlin, kapt tasks disabled"
+            echo
+            echo "exit=$rc lines=$(grep -c '' "$d/p1.log" 2>/dev/null) errors=$(grep -cE '^e: ' "$d/p1.log" 2>/dev/null)"
+            echo
+            echo '```'
+            grep -hE "^e: |^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)" "$d/p1.log" 2>/dev/null | head -80
+            echo '```'
+            echo
+          } >> "$d/report.md"
+          echo "probe1 exit=$rc" >> "$d/status.txt"
+          "$d/publish.sh" || echo "publish after probe 1 failed"
+          exit 0
+
+      - name: "Probe 2 - compileDebugUnitTestKotlin with kapt disabled"
+        shell: bash
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          d=$GITHUB_WORKSPACE/.diag
+          gradle --no-daemon --console=plain --stacktrace -I "$d/no-kapt.init.gradle.kts" \
+            :app:compileDebugUnitTestKotlin </dev/null > "$d/p2.log" 2>&1
+          rc=$?
+          {
+            echo "## Probe 2 - unit-test sources compile, kapt tasks disabled"
+            echo
+            echo "exit=$rc lines=$(grep -c '' "$d/p2.log" 2>/dev/null) errors=$(grep -cE '^e: ' "$d/p2.log" 2>/dev/null)"
+            echo
+            echo '```'
+            grep -hE "^e: |^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)" "$d/p2.log" 2>/dev/null | head -80
+            echo '```'
+            echo
+          } >> "$d/report.md"
+          echo "probe2 exit=$rc" >> "$d/status.txt"
+          "$d/publish.sh" || echo "publish after probe 2 failed"
+          exit 0
+
+      - name: "Probe 3 - compileReleaseKotlin with kapt disabled"
+        shell: bash
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          d=$GITHUB_WORKSPACE/.diag
+          gradle --no-daemon --console=plain --stacktrace -I "$d/no-kapt.init.gradle.kts" \
+            :app:compileReleaseKotlin </dev/null > "$d/p3.log" 2>&1
+          rc=$?
+          {
+            echo "## Probe 3 - release variant compiles, kapt tasks disabled"
+            echo
+            echo "exit=$rc lines=$(grep -c '' "$d/p3.log" 2>/dev/null) errors=$(grep -cE '^e: ' "$d/p3.log" 2>/dev/null)"
+            echo
+            echo '```'
+            grep -hE "^e: |^> Task|FAILURE:|BUILD (SUCCESSFUL|FAILED)" "$d/p3.log" 2>/dev/null | head -80
+            echo '```'
+            echo
+          } >> "$d/report.md"
+          echo "probe3 exit=$rc" >> "$d/status.txt"
           echo "PROBES FINISHED" >> "$d/status.txt"
+          "$d/publish.sh" || echo "publish after probe 3 failed"
           exit 0
 
       - name: Publish probes and report

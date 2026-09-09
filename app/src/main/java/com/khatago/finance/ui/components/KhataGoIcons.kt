@@ -1,6 +1,7 @@
 package com.khatago.finance.ui.components
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
@@ -59,6 +60,8 @@ object KhataGoIcons {
     val ShopCredit: ImageVector = Icons.Outlined.LocalMall
     val Loan: ImageVector = Icons.Outlined.AccountBalance
     val Emi: ImageVector = Icons.Outlined.PhoneAndroid
+    /** The "opens another screen" affordance, AutoMirrored so it points the right way in RTL. */
+    val ChevronRight: ImageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight
     val Borrowed: ImageVector = Icons.Outlined.ArrowDownward
     val Lent: ImageVector = Icons.Outlined.ArrowUpward
     val Income: ImageVector = Icons.Outlined.TrendingUp
