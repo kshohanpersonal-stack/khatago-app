@@ -22,16 +22,16 @@ to this project's gradle.properties.
 > Task :app:checkKotlinGradlePluginConfigurationErrors
 > Task :app:generateReleaseResValues FROM-CACHE
 > Task :app:generateReleaseBuildConfig FROM-CACHE
-> Task :app:createReleaseCompatibleScreenManifests
 > Task :app:generateReleaseResources FROM-CACHE
-> Task :app:extractDeepLinksRelease FROM-CACHE
+> Task :app:createReleaseCompatibleScreenManifests
 > Task :app:packageReleaseResources FROM-CACHE
 > Task :app:parseReleaseLocalResources FROM-CACHE
+> Task :app:extractDeepLinksRelease FROM-CACHE
 > Task :app:mapReleaseSourceSetPaths
 > Task :app:processReleaseMainManifest FROM-CACHE
 > Task :app:processReleaseManifest FROM-CACHE
-> Task :app:checkReleaseAarMetadata
 > Task :app:processReleaseManifestForPackage FROM-CACHE
+> Task :app:checkReleaseAarMetadata
 > Task :app:mergeReleaseResources FROM-CACHE
 
 > Task :app:processReleaseResources FROM-CACHE
@@ -54,8 +54,33 @@ to this project's gradle.properties.
 
 > Task :app:kaptGenerateStubsReleaseKotlin SKIPPED
 > Task :app:kaptReleaseKotlin SKIPPED
-> Task :app:compileReleaseKotlin FROM-CACHE
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1788914041612.json
+> Task :app:compileReleaseKotlin
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/data/db/KhataGoDatabase.kt:128:26 Parameter 'context' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/data/repo/BackupRepository.kt:63:9 This declaration needs opt-in. Its usage should be marked with '@kotlinx.serialization.ExperimentalSerializationApi' or '@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)'
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/data/repo/BackupRepository.kt:243:71 Parameter 'stats' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/data/repo/BackupRepository.kt:301:62 Parameter 'mode' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/data/repo/BackupRepository.kt:337:9 Parameter 'mode' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/data/repo/PersonRepository.kt:107:17 Variable 'existing' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/data/repo/PersonRepository.kt:131:17 Variable 'existing' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/data/repo/TransactionRepository.kt:55:57 Parameter 'todayEpochDay' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/analytics/AnalyticsScreen.kt:80:5 Parameter 'container' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/analytics/AnalyticsScreen.kt:523:35 Parameter 'currency' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/components/KhataGoFields.kt:185:5 Parameter 'onParsed' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/components/KhataGoFields.kt:269:22 'menuAnchor(): Modifier' is deprecated. Use overload that takes MenuAnchorType and enabled parameters
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/components/KhataGoIcons.kt:67:46 'TrendingUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.TrendingUp
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/components/KhataGoIcons.kt:68:47 'TrendingDown: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.TrendingDown
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/components/KhataGoIcons.kt:81:47 'ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ReceiptLong
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/detail/DetailScreen.kt:76:5 Parameter 'onOpenChild' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/detail/DetailViewModel.kt:412:44 Parameter 'model' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/detail/OnboardingScreen.kt:96:31 Variable 'result' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/detail/SecurityScreen.kt:77:9 Variable 'lockoutMinutes' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/detail/SecurityScreen.kt:78:9 Variable 'attemptsLeft' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/home/DashboardScreen.kt:74:5 Parameter 'container' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/home/DashboardScreen.kt:278:40 Parameter 'module' is never used, could be renamed to _
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/payments/PaymentCenterScreen.kt:63:5 Parameter 'container' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/records/RecordsScreen.kt:65:5 Parameter 'container' is never used
+w: file:///home/runner/work/khatago-app/khatago-app/app/src/main/java/com/khatago/finance/ui/records/RecordsScreen.kt:105:5 Parameter 'shownModuleLabel' is never used
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1788923057981.json
 
 Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
 
@@ -63,6 +88,6 @@ You can use '--warning-mode all' to show the individual deprecation warnings and
 
 For more on this, please refer to https://docs.gradle.org/8.9/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
 
-BUILD SUCCESSFUL in 9s
-16 actionable tasks: 4 executed, 12 from cache
+BUILD SUCCESSFUL in 59s
+16 actionable tasks: 5 executed, 11 from cache
 Configuration cache entry stored.

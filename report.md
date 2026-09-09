@@ -84,3 +84,35 @@ exit=0 lines=74 errors=0
 BUILD SUCCESSFUL in 25s
 ```
 
+## Probe 3 - release variant compiles, kapt tasks disabled
+
+exit=0 lines=93 errors=0
+
+```
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:generateReleaseResValues FROM-CACHE
+> Task :app:generateReleaseBuildConfig FROM-CACHE
+> Task :app:generateReleaseResources FROM-CACHE
+> Task :app:createReleaseCompatibleScreenManifests
+> Task :app:packageReleaseResources FROM-CACHE
+> Task :app:parseReleaseLocalResources FROM-CACHE
+> Task :app:extractDeepLinksRelease FROM-CACHE
+> Task :app:mapReleaseSourceSetPaths
+> Task :app:processReleaseMainManifest FROM-CACHE
+> Task :app:processReleaseManifest FROM-CACHE
+> Task :app:processReleaseManifestForPackage FROM-CACHE
+> Task :app:checkReleaseAarMetadata
+> Task :app:mergeReleaseResources FROM-CACHE
+> Task :app:processReleaseResources FROM-CACHE
+> Task :app:kaptGenerateStubsReleaseKotlin SKIPPED
+> Task :app:kaptReleaseKotlin SKIPPED
+> Task :app:compileReleaseKotlin
+BUILD SUCCESSFUL in 59s
+```
+
+
+## status
+
+
