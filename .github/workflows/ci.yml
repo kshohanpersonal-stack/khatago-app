@@ -209,6 +209,9 @@ jobs:
           gradle --no-daemon --console=plain --stacktrace -I "$d/no-kapt.init.gradle.kts" \
             :app:compileDebugKotlin </dev/null > "$d/p1.log" 2>&1
           rc=$?
+          # Written before the report block, because the block is the part a torn-down job has been
+          # caught losing: the exit code is the one fact a reader needs even when nothing else did.
+          echo "probe1 exit=$rc" >> "$d/status.txt"
           {
             echo "## Probe 1 - compileDebugKotlin, kapt tasks disabled"
             echo
@@ -219,7 +222,6 @@ jobs:
             echo '```'
             echo
           } >> "$d/report.md"
-          echo "probe1 exit=$rc" >> "$d/status.txt"
           "$d/publish.sh" || echo "publish after probe 1 failed"
           exit 0
 
@@ -234,6 +236,9 @@ jobs:
           gradle --no-daemon --console=plain --stacktrace -I "$d/no-kapt.init.gradle.kts" \
             :app:compileDebugUnitTestKotlin </dev/null > "$d/p2.log" 2>&1
           rc=$?
+          # Written before the report block, because the block is the part a torn-down job has been
+          # caught losing: the exit code is the one fact a reader needs even when nothing else did.
+          echo "probe2 exit=$rc" >> "$d/status.txt"
           {
             echo "## Probe 2 - unit-test sources compile, kapt tasks disabled"
             echo
@@ -244,7 +249,6 @@ jobs:
             echo '```'
             echo
           } >> "$d/report.md"
-          echo "probe2 exit=$rc" >> "$d/status.txt"
           "$d/publish.sh" || echo "publish after probe 2 failed"
           exit 0
 
@@ -259,6 +263,9 @@ jobs:
           gradle --no-daemon --console=plain --stacktrace -I "$d/no-kapt.init.gradle.kts" \
             :app:compileReleaseKotlin </dev/null > "$d/p3.log" 2>&1
           rc=$?
+          # Written before the report block, because the block is the part a torn-down job has been
+          # caught losing: the exit code is the one fact a reader needs even when nothing else did.
+          echo "probe3 exit=$rc" >> "$d/status.txt"
           {
             echo "## Probe 3 - release variant compiles, kapt tasks disabled"
             echo
@@ -269,8 +276,18 @@ jobs:
             echo '```'
             echo
           } >> "$d/report.md"
-          echo "probe3 exit=$rc" >> "$d/status.txt"
           echo "PROBES FINISHED" >> "$d/status.txt"
+          # The report is finalised here too, not only in the step below: that step is what a torn-down
+          # job was caught losing in run 34294256615, and a report without its status tail reads like an
+          # investigation that was never finished. The later append is idempotent enough to be harmless.
+          {
+            echo
+            echo "## status"
+            echo
+            echo "```"
+            tail -20 "$d/status.txt"
+            echo "```"
+          } >> "$d/report.md"
           "$d/publish.sh" || echo "publish after probe 3 failed"
           exit 0
 

@@ -93,8 +93,9 @@ class PaymentEngineTest {
             ),
         )
         assertTrue("credit save failed: $result", result.isSaved)
-        val row = database.creditDao().findCreditsForShop(shopId).first()
-        return row.single().id
+        // `single()`, not `first()`: this helper writes exactly one credit and every assertion below
+        // counts on that, so a second row must fail the test loudly instead of being ignored.
+        return database.creditDao().findCreditsForShop(shopId).single().id
     }
 
     private suspend fun record(creditId: Long, amount: Long): PaymentOutcome =
@@ -193,7 +194,7 @@ class PaymentEngineTest {
         // Growing the first payment to 8,000 with 2,000 already paid elsewhere would total 10,000 —
         // exactly the balance, so it must be accepted.
         val grown = payments.update(first.paymentId, 8_000L, today, "Cash", null, null)
-        assertTrue("expected acceptance, got $grown")
+        assertTrue("expected acceptance, got $grown", grown is PaymentOutcome.Recorded)
         assertEquals(10_000L, paidTotal(creditId))
 
         // One paisa more would be an overpayment smuggled in through an edit.
